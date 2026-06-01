@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Local data cache (mirrors GCS layout — re-fetchable, never commit)
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# macOS
+.DS_Store

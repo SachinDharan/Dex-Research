@@ -1,0 +1,119 @@
+# Study scope from Research Plan.pdf.
+# All addresses MUST be verified against official protocol docs or Dune contract
+# labels before any fetch run. Placeholders are marked TODO_VERIFY.
+
+window:
+  months:
+    - "2025-11"
+    - "2025-12"
+    - "2026-01"
+    - "2026-02"
+  # The approval branch of uniswap_v4/timeline looks back this far before the
+  # window start to catch a prior approve(Permit2, max) that an in-window swap
+  # later draws down (Case C, "prior_approval").
+  approvals_lookback_months: 18
+
+chains:
+  - ethereum
+  - polygon
+
+# A "protocol arm" is one row below; the pipeline iterates over arms × chains × months.
+# `spenders` are the contracts users grant approve() to — i.e., the address that
+# appears in evt_Approval.spender for an action against this protocol.
+protocols:
+  uniswap:
+    version: "v4"
+    type: swap
+    chains: [ethereum, polygon]
+    spenders:
+      # Permit2 is canonical across chains.
+      ethereum: { permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" }
+      polygon:  { permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" }
+
+  sushiswap:
+    version: "v2"
+    type: swap
+    chains: [ethereum, polygon]
+    spenders:
+      ethereum: { router: "TODO_VERIFY" }
+      polygon:  { router: "TODO_VERIFY" }
+
+  aave:
+    version: "v3"
+    type: lending
+    chains: [ethereum, polygon]
+    spenders:
+      ethereum: { pool: "TODO_VERIFY" }  # Aave V3 Pool
+      polygon:  { pool: "TODO_VERIFY" }
+
+  compound:
+    version: "v3"
+    type: lending
+    chains: [ethereum, polygon]
+    # Compound V3 uses one Comet contract per base asset. List each.
+    spenders:
+      ethereum:
+        comet_usdc: "TODO_VERIFY"
+      polygon:
+        comet_usdc: "TODO_VERIFY"
+
+# Asset addresses. Ethereum mainnet values are widely known; verify Polygon
+# choices against your intended definition of "stablecoin" (bridged USDC.e vs
+# native USDC, etc).
+tokens:
+  ethereum:
+    USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    DAI:  "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+    WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  polygon:
+    USDC_E:  "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # bridged USDC.e — verify
+    USDT:    "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"  # verify
+    DAI:     "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063"  # verify
+    WMATIC:  "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"  # verify
+
+sampling:
+  # Per the research plan: flag wallets at >N std devs above mean action count
+  # as likely bots or automated actors.
+  bot_sd_threshold: 3.0
+  # Base sample size per decile per (protocol arm × chain × month).
+  per_decile_sample: 50
+  # Multiplier applied to the upper deciles (D8-D10) since they're more
+  # analytically interesting per the plan.
+  upper_decile_oversample: 2.0
+
+# Query arms, namespaced per protocol to mirror the queries/<arm>/<dataset>.sql
+# tree. The Uniswap V4 stages run their .sql directly via Dune's Execute SQL
+# endpoint (dexresearch.dune_runner), so they need no saved query and no id — the
+# `execute_sql` marker records that. (Execute SQL needs only Read scope; creating
+# saved queries via API would need an Analyst plan.) Legacy stages still keyed by
+# a numeric saved-query id are listed at the bottom.
+dune_queries:
+  uniswap_v4:
+    timeline: execute_sql   # queries/uniswap_v4/timeline.sql — ONE query: swaps + approvals + permit2
+
+  # Other protocol arms — add each as its queries/<arm>/timeline.sql is written
+  # (contracts still TODO_VERIFY under `protocols`):
+  # sushiswap_v2:
+  #   timeline: execute_sql
+  # aave_v3:
+  #   timeline: execute_sql
+  # compound_v3:
+  #   timeline: execute_sql
+
+  # Legacy saved-query stages, keyed by numeric id (dune.run_named_query):
+  wallet_populations: null   # queries/wallet_populations.sql
+  gas_measurements: null     # queries/gas_measurements.sql
+
+# Dune runner settings (dexresearch.dune_runner). It runs SQL via Execute SQL,
+# polls status, and pages result reads. Tuned for the community plan
+# (2,500 credits/mo): reruns reuse the manifest's execution_id (never re-execute)
+# and skip stages whose output parquet already exists (never re-read).
+dune:
+  performance: null           # engine tier; null = Dune default (medium). "large" costs more.
+  max_concurrency: 4          # in-flight executions per stage
+  page_size: 25000            # rows per results page (credit-safe fetch; avoids oversized responses)
+  poll_initial_seconds: 2     # status-poll backoff start
+  poll_max_seconds: 30        # status-poll backoff ceiling
+  poll_timeout_seconds: 3600  # give up on a single execution after this (long query needs headroom)
+  max_retries: 5              # retries on transient / 429 / credit fetch errors
