@@ -28,6 +28,25 @@ passed in; the wallet set never leaves Dune.
 Values are substituted into the SQL text by `dune.render_named_sql` — nothing is
 saved on dune.com and there are no query ids.
 
+## SushiSwap V2 — staged fetch, direct-approval flow
+
+The Execute SQL plan caps executions at 2 minutes, so this arm is three small
+queries run as many executions by `dexresearch.fetch.sushi_timeline` (which
+loads pages straight into native BigQuery tables — no GCS/CSV intermediate):
+
+1. `sushiswap_v2/swaps.sql` — leg-level qualifying swaps (first leg sold a
+   study stablecoin, ANY output token) with `tx_to` / `evt_index` / `project` /
+   `pool` / `taker` / `method_id`, so entry-router vs first-hop vs
+   output-direction are post-processing flags, not fetch filters.
+2. `sushiswap_v2/approvals.sql` — per (wallet batch × yearly chunk since
+   Permit2 genesis 2022-11-01). Spender deliberately UNPINNED — Sushi approvals
+   go to its routers, not Permit2; store `spender` raw, label downstream.
+3. `sushiswap_v2/permit2_events.sql` — per wallet batch, study window; includes
+   the Lockdown branch (revocations inside Permit2, e.g. revoke.cash).
+
+Wallet batches come from the BigQuery `swaps` table after stage 1 — the wallet
+set never round-trips through SQL text at full-population size.
+
 ## Legacy / other arms
 
 Other stages (and future protocol arms once their contracts are verified) may use

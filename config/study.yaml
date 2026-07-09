@@ -110,7 +110,8 @@ dune_queries:
 # (2,500 credits/mo): reruns reuse the manifest's execution_id (never re-execute)
 # and skip stages whose output parquet already exists (never re-read).
 dune:
-  performance: null           # engine tier; null = Dune default (medium). "large" costs more.
+  performance: null           # engine tier; null = Dune default (medium). Free has a hard
+                              # 2-min execution cap — too small for the timeline queries.
   max_concurrency: 4          # in-flight executions per stage
   page_size: 25000            # rows per results page (credit-safe fetch; avoids oversized responses)
   poll_initial_seconds: 2     # status-poll backoff start

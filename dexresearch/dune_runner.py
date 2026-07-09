@@ -190,22 +190,43 @@ class DuneRunner:
             time.sleep(delay)
             delay = min(delay * 2, self.cfg.poll_max_seconds)
 
-    def fetch_pages(self, execution_id: str, *, start_offset: int = 0, start_page: int = 0):
+    def fetch_pages(
+        self,
+        execution_id: str,
+        *,
+        start_offset: int = 0,
+        start_page: int = 0,
+        columns: Sequence[str] | None = None,
+        filters: str | None = None,
+    ):
         """Yield (page_n, offset, page_df, next_offset) for each result page.
 
         Callers control what to do with each page (save to GCS, accumulate in
         memory, etc.).  start_offset / start_page let a caller resume mid-way.
+
+        columns/filters are passed to Dune's results endpoint so only the
+        requested cells are read — billed datapoints are rows x columns
+        INCLUDING nulls, so projecting away a wide superset's padding is the
+        main read-cost lever.
         """
         offset = start_offset
         page_n = start_page
         print(f"[fetch]  execution_id={execution_id} — "
               f"{'resuming' if start_offset else 'starting'} paged fetch "
-              f"(page_size={self.cfg.page_size}, offset={offset:,})")
+              f"(page_size={self.cfg.page_size}, offset={offset:,}"
+              f"{', projected' if columns else ''}{', filtered' if filters else ''})")
         while True:
+            params: dict[str, Any] = {
+                "limit": self.cfg.page_size, "offset": offset, "allow_partial_results": "true",
+            }
+            if columns:
+                params["columns"] = ",".join(columns)
+            if filters:
+                params["filters"] = filters
             body = self._request(
                 "GET",
                 f"{API_BASE}/execution/{execution_id}/results",
-                params={"limit": self.cfg.page_size, "offset": offset, "allow_partial_results": "true"},
+                params=params,
             ).json()
             page = body.get("result", {}).get("rows", [])
             nxt = body.get("next_offset")
