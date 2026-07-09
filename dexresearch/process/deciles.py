@@ -48,13 +48,13 @@ def flag_bots(
     """Flag wallets > mean + sd_threshold * std within each (protocol, action_type)."""
     out = df.copy()
 
-    def _flag(g: pd.DataFrame) -> pd.Series:
-        mean = g[action_col].mean()
-        std = g[action_col].std(ddof=0)
-        return g[action_col] > (mean + sd_threshold * std)
+    # transform, not apply: apply collapses to a DataFrame when there is only
+    # one group, and re-orders rows when there are several.
+    def _flag(s: pd.Series) -> pd.Series:
+        return s > (s.mean() + sd_threshold * s.std(ddof=0))
 
     out["is_bot"] = (
-        out.groupby(["protocol", "action_type"], group_keys=False).apply(_flag).astype(bool)
+        out.groupby(["protocol", "action_type"])[action_col].transform(_flag).astype(bool)
     )
     return out
 

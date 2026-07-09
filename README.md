@@ -150,3 +150,21 @@ python -m dexresearch.process.metrics
 Anyone with read access to the GCS bucket and a Dune account can re-run any
 stage independently: every stage's input is the previous stage's parquet at a
 deterministic path, and every Dune query's SQL is in [`queries/`](./queries/).
+
+## SushiSwap V2 arm
+
+The SushiSwap arm is complete (Ethereum, Nov 2025 – Feb 2026) and lands in
+BigQuery at `dex-research.sushiswap_v2` rather than GCS parquet.
+
+```bash
+python -m dexresearch.process.sushi_analysis   # -> data/analysis/*.csv + stdout report
+```
+
+- [`docs/sushiswap_v2_findings.md`](./docs/sushiswap_v2_findings.md) — **results**
+- [`docs/sushiswap_v2_methodology.md`](./docs/sushiswap_v2_methodology.md) — why each definition
+- [`docs/sushiswap_v2_run_log.md`](./docs/sushiswap_v2_run_log.md) — how the fetch was done
+
+Headline: the unlimited-vs-exact approval choice is a property of the **spender's
+interface**, not of the user — the same wallet, on the same token, accepts
+unlimited from Permit2/OKX and exact from MetaMask/LI.FI (discordance 67:0 and
+359:4). See the findings doc for the bounds that govern every ratio.

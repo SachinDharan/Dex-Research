@@ -33,15 +33,34 @@ Two different readings of "a SushiSwap swap" give wildly different populations
 |---|---|
 | qualifying txs touching a Sushi pool (stable sold there) | 66,500 |
 | …whose **first hop** was a Sushi pool | 47,215 |
-| …sent **directly to a Sushi router** (`tx_to`) | ~1,015 |
+| …sent **directly to a Sushi router** (`tx_to`) | 1,649 |
 
-~98% of Sushi-pool volume is aggregator/MEV flow *through* Sushi liquidity,
+~97.5% of Sushi-pool volume is aggregator/MEV flow *through* Sushi liquidity,
 not users *choosing* SushiSwap. Because the study measures approval behavior
 paired to spender contracts — and a 1inch user approves 1inch, never Sushi —
 the **router-entry definition is the study population**. Counting pool-touch
 trades would inflate the swap denominator with events that can never have a
 matching Sushi approval. (Contrast: Uniswap Feb 2026 — 1.2M qualifying,
 ~130k router-entry, 11%.)
+
+**Correction (2026-07-09).** The earlier figure of ~1,015 router-entry txs /
+257 wallets counted only `Router02` + `RouteProcessor4`. Resolving every
+high-traffic `tx_to` against Dune `contracts.contract_mapping` found two more
+SushiSwap entry contracts, and **`RedSnwapper` is the largest by wallet count**:
+
+| Sushi router (`tx_to`) | txs | wallets |
+|---|---|---|
+| `0xd9e1ce17…` Router02 (UniswapV2Router02) | 955 | 255 |
+| `0xac4c6e21…` RedSnwapper | 634 | 406 |
+| `0xe43ca1de…` RouteProcessor4 | 60 | 2 |
+| `0xd2b37ade…` RouteProcessor9_2 | 0 | 0 (1,103 approvals, 1 wallet) |
+| **union** | **1,649** | **626** |
+
+Do **not** use `labels.owner_addresses.custody_owner` to build this set — it
+tags CoW's `GPv2Settlement`, the ERC-4337 `EntryPoint`, and MetaMask's
+`MetaBridge` as "sushiswap". Only `contract_project` / `contract_name` are
+trustworthy. The canonical set lives in `SUSHI_ROUTERS` in
+`dexresearch/process/sushi_analysis.py`.
 
 Both definitions remain computable because the fetch **stores broad and
 classifies later**: `tx_to` (entry contract) and approval `spender` are stored
@@ -85,6 +104,27 @@ for separate treatment. Etherscan's "MEV Bot" tags are proprietary; the
 reproducible proxies are in-schema: vanity `tx_to` (leading zeros), unknown
 `method_id` selectors, `max_priority_fee_per_gas = 0`, legs-per-tx, action
 counts.
+
+**Implemented (2026-07-09)** in `process/sushi_analysis.py`. A wallet is a bot
+if *any* of:
+
+1. `action_count > mean + 3σ` — the plan's rule (54 wallets).
+2. ≥2 of 4 behavioral signals (278 wallets): `zero_prio_frac ≥ 0.5`,
+   `max_legs ≥ 10`, `≥20 txs/active-day`, `≥10 approvals/active-day`.
+3. **Sustained approval spam**: ≥10 approvals/active-day *and* ≥100 total
+   (38 wallets). The total floor is load-bearing — a human revoke.cash sweep
+   trips the rate but has a median of 27 lifetime approvals, while the
+   automated wallets run 200+/day on all 120 days of the window.
+
+Result: 349 of 11,614 wallets (3.0%), carrying **44.6% of qualifying txs,
+60.7% of approvals, and 78.6% of all approval gas**. The rules independently
+rediscover `0x5b43453fce…`, the exact wallet the research plan cites as its
+bot example. Rules 1 and 2 overlap on only 6 wallets — the 3σ rule alone
+misses low-volume searchers, so neither is sufficient on its own.
+
+`max_priority_fee_per_gas` is NULL for legacy (type-0) txs, which have no
+priority-fee field and pay the builder in full. NULL must be treated as
+*not* zero — the opposite of the private-orderflow signal.
 
 ## Known limitations / deferred
 
