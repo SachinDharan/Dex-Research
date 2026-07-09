@@ -13,6 +13,10 @@ Answers three questions the research plan raises:
 Everything runs in BigQuery + pandas. Outputs land in `data/analysis/*.csv`
 for downstream use (e.g. a web app), and a report is printed to stdout.
 
+Post-delta (2026-07-09): candidates are `swaps` UNION `swaps_txto_delta`
+(router-entry population complete, verified vs the independent Dune funnel)
+and approvals come from the `approvals_all` view.
+
 Run with:
     python -m dexresearch.process.sushi_analysis
 """
@@ -136,11 +140,25 @@ def label(addr: str) -> str:
 def load_tx_level() -> pd.DataFrame:
     """One row per qualifying transaction, with routing + gas features.
 
-    The swaps table is leg-level; a tx_hash repeats once per hop. Gas columns
-    are tx-level and therefore identical across a tx's legs, so MAX() is a
+    Candidates come from BOTH discovery anchors, disjoint by construction:
+    `swaps` (pool-anchored: has a Sushi stable-selling leg) and
+    `swaps_txto_delta` (tx_to-anchored remainder: entered a Sushi router but
+    routed entirely past the old anchor). Router-entry txs are complete;
+    non-router pool-touch txs are the aggregator/MEV contrast population.
+
+    Tables are leg-level; a tx_hash repeats once per hop. Gas columns are
+    tx-level and therefore identical across a tx's legs, so MAX() is a
     dedupe, not an aggregate.
     """
+    cols = """wallet, block_time, tx_hash, tx_to, evt_index, project,
+              token_symbol, counter_symbol, amount_usd,
+              gas_used, gas_cost_eth, max_priority_fee_per_gas, method_id"""
     return _q(f"""
+        WITH legs AS (
+          SELECT {cols} FROM `{DATASET}.swaps`
+          UNION ALL
+          SELECT {cols} FROM `{DATASET}.swaps_txto_delta`
+        )
         SELECT
           tx_hash,
           ANY_VALUE(wallet)                    AS wallet,
@@ -159,19 +177,20 @@ def load_tx_level() -> pd.DataFrame:
           ARRAY_AGG(counter_symbol ORDER BY evt_index LIMIT 1)[OFFSET(0)] AS first_counter,
           ARRAY_AGG(project       ORDER BY evt_index LIMIT 1)[OFFSET(0)] AS first_project,
           LOGICAL_OR(project = "sushiswap")    AS touches_sushi_pool
-        FROM `{DATASET}.swaps`
+        FROM legs
         GROUP BY tx_hash
     """)
 
 
 def load_approvals() -> pd.DataFrame:
-    """One row per approve() event. amount_raw is a decimal string (uint256),
-    so it is kept as a string and parsed in Python — int64 would overflow."""
+    """One row per approve() event, base + delta wallets (approvals_all view).
+    amount_raw is a decimal string (uint256), so it is kept as a string and
+    parsed in Python — int64 would overflow."""
     return _q(f"""
         SELECT wallet, block_time, tx_hash, token_symbol,
                counterparty AS spender, amount_raw, is_revoke,
                gas_used, gas_cost_eth, max_priority_fee_per_gas
-        FROM `{DATASET}.approvals`
+        FROM `{DATASET}.approvals_all`
     """)
 
 
@@ -369,15 +388,24 @@ def run() -> None:
 
     # ---------------------------------------------------------------- funnel
     h("1. POPULATION FUNNEL — 'a SushiSwap swap' has three different meanings")
-    n_pool = len(tx)
+    # Candidates are the union of two discovery anchors (pool-touch, router
+    # tx_to). Router-entry is COMPLETE post-delta; pool-touch stays the
+    # aggregator/MEV contrast population.
+    n_all = len(tx)
+    n_pool = int(tx["touches_sushi_pool"].sum())
     n_firsthop = int((tx["first_project"] == "sushiswap").sum())
     n_router = int(tx["is_router_entry"].sum())
+    n_router_no_pool = int((tx["is_router_entry"] & ~tx["touches_sushi_pool"]).sum())
     for name, n, w in [
-        ("touched a Sushi pool", n_pool, tx["wallet"].nunique()),
+        ("candidates (either anchor)", n_all, tx["wallet"].nunique()),
+        ("touched a Sushi pool", n_pool, tx.loc[tx["touches_sushi_pool"], "wallet"].nunique()),
         ("first hop was a Sushi pool", n_firsthop, tx.loc[tx["first_project"] == "sushiswap", "wallet"].nunique()),
         ("entered via a Sushi ROUTER", n_router, tx.loc[tx["is_router_entry"], "wallet"].nunique()),
     ]:
-        print(f"  {name:<32} {n:>7,} txs  {w:>6,} wallets  ({n / n_pool:6.2%} of pool-touch)")
+        print(f"  {name:<32} {n:>7,} txs  {w:>6,} wallets  ({n / n_all:6.2%} of candidates)")
+    print(f"\n  Router-entry txs touching NO Sushi pool: {n_router_no_pool:,} "
+          f"({n_router_no_pool / n_router:.1%} of router-entry) — the population the"
+          "\n  pool-anchored fetch could not see: Sushi's own routers shop the trade out.")
 
     print("\n  Router-entry broken down by contract:")
     rb = (tx[tx["is_router_entry"]].groupby("tx_to")
@@ -460,10 +488,11 @@ def run() -> None:
         ["router_primary", "router_mixed"],
         default="aggregator_only",
     )
-    # "router_primary" means: of the txs we can SEE (those touching a Sushi
-    # pool), >=80% entered via a Sushi router. It does NOT mean the wallet is a
-    # SushiSwap loyalist — candidate discovery was pool-anchored, so a wallet's
-    # Uniswap-only trades are invisible here. Note median_approvals is counted
+    # "router_primary" means: of this wallet's CANDIDATE txs (router-entry is
+    # complete; pool-touch adds its aggregator trades through Sushi liquidity),
+    # >=80% entered via a Sushi router. A wallet's Uniswap-only / 1inch-only
+    # trades that never touch Sushi remain invisible, so this is Sushi-relative
+    # loyalty, not a full trading profile. Note median_approvals is counted
     # across ALL spenders, which is why it dwarfs median_txs.
     summary = human.groupby("cohort").agg(
         wallets=("wallet", "size"),
@@ -498,20 +527,16 @@ def run() -> None:
     print("\n  (b) is inflated: it credits a wallet's 1inch/Permit2 approvals to")
     print("  SushiSwap. Only (a) speaks to SushiSwap's approval mechanics.")
 
-    # The denominator is systematically undercounted: candidate discovery was
-    # pool-anchored, so a tx entering a Sushi router but routed entirely through
-    # non-Sushi pools was never fetched. The numerator (approvals to the router)
-    # is complete. Both push the ratio UP, so (a) is an upper bound.
+    # Post-delta, the denominator is complete: every router-entry qualifying tx
+    # in the window is fetched (tx_to-anchored, verified against the
+    # independent Dune funnel), so (a) is a point estimate, not an upper bound.
     approvers = int((human["sushi_approvals"] > 0).sum())
-    invisible = int(((human["sushi_approvals"] > 0) & (human["router_entry_txs"] == 0)).sum())
-    print(f"\n  UPPER BOUND, not a point estimate. {approvers:,} non-bot wallets approved a")
-    print(f"  Sushi router but {invisible:,} ({invisible / max(approvers, 1):.1%}) have ZERO observed")
-    print("  router-entry swaps — their actions exist on-chain but fall outside this")
-    print("  pool-anchored fetch. Every missing action lowers the true ratio.")
-    print("  The defensible claim is directional: >=1 approval per swap for "
-          f"{(r >= 1).mean():.0%} of users,")
-    print("  which is what the plan predicted for SushiSwap and the opposite of Uniswap's")
-    print("  approve-once-then-coast pattern. The level itself needs tx_to-anchored discovery.")
+    residual = int(((human["sushi_approvals"] > 0) & (human["router_entry_txs"] == 0)).sum())
+    print(f"\n  POINT ESTIMATE (denominator complete post-delta). Residual: {residual:,} of")
+    print(f"  {approvers:,} non-bot Sushi-router approvers ({residual / max(approvers, 1):.1%}) still show zero")
+    print("  router-entry swaps — now attributable to real scope edges, not lost data:")
+    print("  the approval lookback reaches 2022 but swaps only cover the window, and a")
+    print("  swap whose FIRST leg sold a non-study token (e.g. ETH-in) does not qualify.")
 
     # -------------------------------------------------------------- deciles
     h("6. DECILES (non-bot router users, ranked by qualifying tx count)")
@@ -602,7 +627,7 @@ def run() -> None:
     print(f"  Sushi-router-entry swap gas {fmt_eth(rs)}  ->  {ra / rs:.1%}")
     print("  Both sides are restricted to the Sushi router, so this ratio is comparable.")
     print("  The all-spender ratio is NOT reported: its numerator spans every spender")
-    print("  while its denominator is pool-anchored, which inflates it exactly as in (5).")
+    print("  while its denominator only covers Sushi-touching swaps (scope mismatch).")
 
     # -------------------------------------------------------------- monthly
     h("10. MONTHLY — the Dec/Jan tax-loss-harvesting window")
@@ -623,10 +648,13 @@ def run() -> None:
     m["unl_per_wallet"] = (m["unlimited"] / m["unl_wallets"]).round(2)
     m["revoke_share"] = (m["revocations"] / m["approvals"]).round(3)
     print(m.to_string())
-    print("\n  December's unlimited-approval spike is broad-based, not a few accounts:")
-    print("  wallet count and per-wallet intensity both rise, and the top-3 wallets'")
-    print("  share of unlimited events FALLS (12.8% Nov -> 6.5% Dec). Consistent with")
-    print("  the plan's tax-loss-harvesting hypothesis; not proof of motive.")
+    # Breadth check for any monthly spike: if the top-3 wallets' share of
+    # unlimited events falls while wallet count rises, the move is broad-based
+    # (consistent with tax-loss harvesting), not a few accounts churning.
+    top3 = (unl.groupby(["month", "wallet"]).size().groupby("month")
+            .apply(lambda s: s.nlargest(3).sum() / s.sum()))
+    print("\n  Top-3 wallets' share of unlimited events by month (breadth check):")
+    print("   " + "  ".join(f"{mth}={sh:.1%}" for mth, sh in top3.items()))
 
     # ------------------------------------------------- default vs deliberate
     h("11. DEFAULT OR DELIBERATE? — does the wallet or the interface pick unlimited?")
@@ -660,6 +688,28 @@ def run() -> None:
       This is chain-side evidence only. It shows the outcome is spender-determined;
       confirming which UI ships which default needs a front-end audit."""))
     dvd.to_csv(OUT_DIR / "default_vs_deliberate.csv", index=False)
+
+    # -------------------------------------------------- top traders (Kim)
+    h("12. TOP TRADERS vs AGGREGATORS — do heavy traders avoid aggregators?")
+    # Kim's hypothesis: top traders would NOT want aggregators. Proxy here:
+    # of a wallet's candidate txs, what share entered via a Sushi router
+    # (deliberate venue choice) vs arrived through an aggregator/searcher?
+    # Only Sushi-touching activity is visible, so this is a Sushi-relative
+    # share, not a full trading profile.
+    act = human[human["qualifying_txs"] > 0]
+    for basis in ["qualifying_txs", "volume_usd"]:
+        ranked = act.sort_values(basis, ascending=False)
+        cuts = {
+            "top 1%": ranked.head(max(len(ranked) // 100, 1)),
+            "top 10%": ranked.head(max(len(ranked) // 10, 1)),
+            "bottom 50%": ranked.tail(len(ranked) // 2),
+        }
+        print(f"\n  Ranked by {basis} — router-entry share of the cohort's txs:")
+        for name, grp in cuts.items():
+            share = grp["router_entry_txs"].sum() / grp["qualifying_txs"].sum()
+            ever = (grp["router_entry_txs"] > 0).mean()
+            print(f"    {name:<11} {len(grp):>6,} wallets  router share={share:6.1%}  "
+                  f"ever used router={ever:6.1%}")
 
     # ------------------------------------------------------------------ save
     feats.to_csv(OUT_DIR / "wallet_features.csv", index=False)

@@ -9,10 +9,11 @@
 -- 2-minute cap. Chunks span from Permit2 genesis (2022-11-01) to window end so
 -- outstanding-allowance-at-end-of-period sees the latest approval ever.
 --
--- Parameters:
---   {{wallets}}      comma-separated 0x-prefixed address literals (unquoted)
---   {{chunk_start}}  approval time slice start, inclusive
---   {{chunk_end}}    approval time slice end, exclusive
+-- Parameters (wallet placeholder not written literally here — render
+-- substitutes inside comments too, doubling the payload; run-log gotcha #4):
+--   wallets        comma-separated 0x-prefixed address literals (unquoted)
+--   chunk_start    approval time slice start, inclusive
+--   chunk_end      approval time slice end, exclusive
 
 SELECT
   to_hex(a.owner)                          AS wallet,

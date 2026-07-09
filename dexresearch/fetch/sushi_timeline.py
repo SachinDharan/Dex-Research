@@ -81,6 +81,13 @@ SCHEMAS: dict[str, list[bigquery.SchemaField]] = {
     ] + _GAS_TAIL,
 }
 
+# Delta tables (fetch.sushi_delta): the tx_to-anchored txs the pool-anchored
+# fetch missed. Same schemas as their base tables, except swaps_txto_delta
+# drops swap_count — population-relative, recomputed in the union view.
+SCHEMAS["swaps_txto_delta"] = [f for f in SCHEMAS["swaps"] if f.name != "swap_count"]
+SCHEMAS["approvals_delta"] = SCHEMAS["approvals"]
+SCHEMAS["permit2_events_delta"] = SCHEMAS["permit2_events"]
+
 # Dune's to_hex() returns bare uppercase hex; normalise to 0x-lowercase so
 # Etherscan links paste cleanly and stage-3/4 wallet literals are valid SQL.
 _HEX_COLS = {"wallet", "tx_hash", "token", "counterparty", "tx_to", "pool", "taker", "method_id"}

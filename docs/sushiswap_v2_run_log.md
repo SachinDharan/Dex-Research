@@ -91,6 +91,30 @@ override for dry runs (window change → meta-hash change → clean table reset)
 - Account 3: finished swaps (224k rows), all approvals, all permit2.
 - Exploration/verification via MCP across the sessions: ~10 credits.
 
+## Delta run (2026-07-09): the missing 94.8% of the population
+
+`python -m dexresearch.fetch.sushi_delta` — additive companion run under a
+fresh community API key. Fetched the tx_to-anchored router-entry txs the
+pool-anchored stage 1 missed (see methodology, limitation 1), **without
+dropping or appending to any base table**: the delta SQL anti-joins the old
+`cand` predicate, so overlap txs were never re-bought.
+
+| table / view | rows | notes |
+|---|---|---|
+| `swaps_txto_delta` | 41,723 legs / 30,300 txs / 5,022 wallets | gate: 0 tx overlap with `swaps`, no dup legs |
+| `approvals_delta` | 58,293 | 4,507 NEW wallets only (base wallets already complete) |
+| `permit2_events_delta` | 6,853 | same wallet diff |
+| view `swaps_router_entry` | 44,378 legs / **31,949 txs / 5,184 wallets** | study population; `swap_count` recomputed |
+| view `approvals_all` / `permit2_events_all` | 498,990 / 217,453 | base ∪ delta |
+
+Every count matched the pre-measured Dune truth (query 7922955) exactly; the
+run enforced them as hard gates (preflight on base-table integrity, stage-1
+gate before any approvals spend, union gate after view creation). Entire run
+completed in one pass on one account, ~6 executions, no resume needed.
+
+**Consequence for analysis:** bot labels and every finding must be recomputed
+over `swaps_router_entry` + `approvals_all` — the population grew 19×.
+
 ## Aftermath backlog
 
 git-tracked from this commit onward. Remaining: `router_labels` /

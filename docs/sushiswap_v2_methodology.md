@@ -170,7 +170,20 @@ priority-fee field and pay the builder in full. NULL must be treated as
 
    Fix: re-anchor `cand` on `tx_to IN (SUSHI_ROUTERS)` instead of
    `project = 'sushiswap'`, then re-fetch approvals for the resulting 5,184
-   wallets. Deferred: needs ~300+ Dune credits (≈126 remain this period).
+   wallets.
+
+   **RESOLVED (2026-07-09)** by the additive delta fetch
+   (`queries/sushiswap_v2/swaps_txto_delta.sql` via
+   `dexresearch.fetch.sushi_delta`): tx_to anchor anti-joined against the old
+   pool-anchor predicate, so only the 30,300 missing txs were fetched; base
+   tables untouched. The study population is now the BigQuery **view
+   `swaps_router_entry`** (31,949 txs / 5,184 wallets, `swap_count`
+   recomputed); approvals/permit2 for the 4,507 genuinely new wallets landed
+   in `*_delta` tables unioned by views `approvals_all` /
+   `permit2_events_all`. All counts gate-checked against the independent Dune
+   funnel (query 7922955). Findings and bot labels still need recomputation
+   over the views — until then, `sushiswap_v2_findings.md` remains
+   5.2%-sample based.
 2. **Cross-arm inconsistency**: the legacy Uniswap V4 fetch is stable→ETH
    only, tx-level, *without* the first-leg rule (it counts mid-route
    stable→ETH hops). Re-fetch under this arm's definition before cross-arm

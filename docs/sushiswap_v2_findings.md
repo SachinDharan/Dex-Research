@@ -5,6 +5,13 @@ Results of `python -m dexresearch.process.sushi_analysis` against
 Methodology rationale is in `sushiswap_v2_methodology.md`; the fetch story is in
 `sushiswap_v2_run_log.md`.
 
+**Population status: COMPLETE.** The pool-anchored sampling defect documented in
+earlier versions of this file (the fetch held 5.2% of router-entry txs) was
+resolved 2026-07-09 by the additive delta fetch. Every number below is computed
+on the full, verified population: candidates are `swaps` ∪ `swaps_txto_delta`,
+approvals come from the `approvals_all` view, and the router-entry set matches
+the independent Dune funnel (31,949 txs / 5,184 wallets) exactly.
+
 All gas is reported in **ETH**. USD conversion is deferred — it needs a price
 join at each row's `block_time`, and ETH moved materially across the window, so
 a constant multiplier would be worse than an honest ETH figure.
@@ -17,69 +24,67 @@ a constant multiplier would be worse than an honest ETH figure.
 them.** Holding the wallet *and* the token constant, the same user accepts an
 unlimited allowance from one spender and an exact allowance from another. The
 discordance is large and almost perfectly one-sided. Almost nobody edits the
-default.
+default. Completing the population made this *stronger* (§3).
 
-This is the finding that survives the dataset's known sampling bias, and it
-speaks directly to the plan's research question about persistent exposure that
-users "carry unknowingly."
-
-Secondary: **SushiSwap's approval cost is a per-new-user cost, not a per-swap
-cost.** This *contradicts* the research plan's prediction, for a reason given
-below. The *direction* is robust; the *level* is not.
-
-> ⚠️ **Read §5 before quoting any count or ratio.** The fetch is pool-anchored
-> and holds **5.2%** of the study population (1,649 of 31,949 qualifying
-> router-entry txs; 626 of 5,184 wallets). The default-vs-deliberate headline
-> (§3) is unaffected — it is a paired within-wallet test. The counts in §1, §4
-> and §6 are provisional pending a `tx_to`-anchored re-fetch.
+Secondary, and revised by the complete data: **the typical SushiSwap user's
+approval-to-swap ratio is exactly 1:1 — but for a different reason than the
+plan gives.** The plan predicted ≈1:1 because it believed Sushi forces a fresh
+approval per swap. It does not (a plain ERC-20 allowance persists). The ratio
+is 1:1 because the modern Sushi flow (RedSnwapper) ships an **exact-amount
+default**, and most users swap only once or twice — so one approval pairs with
+one swap. Heavy users still coast on prior allowances (§4), so the plan's
+"across all deciles" clause still fails.
 
 ---
 
 ## 1. Population — "a SushiSwap swap" has three meanings
 
-*Provisional — see §5. These are the transactions the pool-anchored fetch
-selected, not the full population.*
-
 | population | txs | wallets |
 |---|---|---|
-| touched a Sushi pool (stable sold there) | 66,500 | 11,614 |
+| candidates (either anchor) | 96,800 | 16,121 |
+| touched a Sushi pool (stable sold there) | 67,115 | 11,812 |
 | …whose **first hop** was a Sushi pool | 47,215 | 8,145 |
-| …entered via a **Sushi router** (`tx_to`) | 1,649 | 626 |
-| **true router-entry population** (`tx_to`-anchored, Dune) | **31,949** | **5,184** |
+| entered via a **Sushi router** (`tx_to`) — *study population* | **31,949** | **5,184** |
 
-Most Sushi-*pool* volume is aggregator/MEV flow *through* Sushi liquidity, not
-users choosing SushiSwap — the router-entry set is the study population, because
-a 1inch user approves 1inch, never Sushi. But the converse also holds and the
-fetch missed it: most Sushi-*router* volume never touches a Sushi pool, because
-Sushi's own routers aggregate outward. Only 1,649 of 31,949 were captured.
+Both directions of the entry/liquidity split are now measured, and both are
+extreme:
 
-The router set is four contracts (see `SUSHI_ROUTERS`). An earlier count of
-~1,015 txs / 257 wallets missed two of them — **RedSnwapper is the largest by
-wallet count.** See the correction in `sushiswap_v2_methodology.md`.
+- Most Sushi-*pool* volume is aggregator/MEV flow *through* Sushi liquidity —
+  users who never approve Sushi (a 1inch user approves 1inch).
+- Most Sushi-*router* volume never touches a Sushi pool: **92.9%** of
+  router-entry txs (29,685 of 31,949) routed entirely through other venues,
+  because Sushi's own routers aggregate outward. This is the population the
+  pool-anchored fetch could not see.
+
+Router-entry by contract: **RedSnwapper 30,933 txs / 5,103 wallets** (97% of
+the population), Router02 955 / 255, RouteProcessor4 61 / 3. The modern
+aggregating router *is* SushiSwap's user base; the legacy Router02 flow the
+old sample over-represented is 3% of it.
 
 ---
 
 ## 2. Bots carry the cost, not users
 
-349 of 11,614 wallets (3.0%) are flagged. They account for:
+436 of 16,121 wallets (2.7%) are flagged. They account for:
 
-- **44.6%** of qualifying transactions
-- **60.7%** of approvals
-- **78.6%** of all approval gas
+- **37.3%** of qualifying transactions
+- **54.0%** of approvals
+- **74.7%** of all approval gas
 
 | | total | wallets paying | mean per payer |
 |---|---|---|---|
-| all wallets | 30.37 ETH | 8,244 | 0.0037 ETH |
-| non-bot | 6.50 ETH | 8,191 | 0.0008 ETH |
-| bots | 23.86 ETH | 53 | 0.4502 ETH |
+| all wallets | 32.00 ETH | 12,656 | 0.0025 ETH |
+| non-bot | 8.08 ETH | 12,531 | 0.0006 ETH |
+| bots | 23.92 ETH | 125 | 0.1914 ETH |
 
 The rules independently rediscover `0x5b43453fce…` — the exact wallet the
 research plan cites as its bot example — without being told about it.
 
 Scope-matched approval cost (non-bot, Sushi-router spender ÷ Sushi-router-entry
-swaps): **0.1865 ETH / 0.4574 ETH = 40.8%**. Both sides restricted to the same
-activity. The all-spender-over-Sushi-only ratio is *not* reported: its numerator
-spans every spender while its denominator is pool-anchored.
+swaps): **0.73 ETH / 4.28 ETH = 17.1%**. Both sides restricted to the same
+activity. (The old 40.8% figure was an artifact of the undercounted
+denominator.) The all-spender-over-Sushi-only ratio is *not* reported — scope
+mismatch.
 
 ---
 
@@ -94,23 +99,25 @@ unlimited-approvers emit one.
 
 | SushiSwap routers | unlimited share |
 |---|---|
-| event-weighted | 24.1% |
-| wallet-weighted (ever unlimited) | **47.1%** of 652 wallets |
+| event-weighted | 12.4% |
+| wallet-weighted (ever unlimited) | **20.5%** of 4,944 wallets |
+
+(The old sample said 47.1% wallet-weighted — that was the legacy-Router02
+cohort. The complete, RedSnwapper-dominated population is far more
+exact-leaning, which is itself interface-determined: the modern sushi.com flow
+requests exact amounts.)
 
 Then the test. Same `(wallet, token)`, two different spenders — token held
 constant, so token preference cannot explain it:
 
 | spender A | unlimited | spender B | unlimited | n pairs | discordance (A-unl/B-exact : reverse) |
 |---|---|---|---|---|---|
-| Uniswap Permit2 | 88% | MetaMask Swaps | 8% | 84 | **67 : 0** |
-| OKX TokenApprove | 89% | LI.FI | 13% | 464 | **359 : 4** |
-| Uniswap Permit2 | 79% | LI.FI | 11% | 212 | **146 : 3** |
+| Uniswap Permit2 | 88% | MetaMask Swaps | 7% | 115 | **93 : 0** |
+| OKX TokenApprove | 87% | LI.FI | 13% | 484 | **365 : 5** |
+| Uniswap Permit2 | 80% | LI.FI | 9% | 302 | **216 : 3** |
 
 If the *user* had a standing preference, discordance would be symmetric and
 small. It is neither. The allowance amount is a property of the **interface**.
-
-Wallet-weighted "ever unlimited," across spenders, ranges from **3.9% (MetaMask
-Swaps)** to **78.8% (OKX TokenApprove)** — drawn from the same wallet pool.
 
 **Limitation:** this is chain-side evidence of the *outcome*. It shows the
 choice is spender-determined. Confirming which front-end ships which default
@@ -118,104 +125,77 @@ requires a UI audit, not on-chain data.
 
 ---
 
-## 4. Why this contradicts the research plan (levels provisional — see §5)
+## 4. The approval-to-action ratio, on the complete population
 
 The plan predicts: *"Because SushiSwap requires a fresh exact-amount approval
 before each swap, the approval-to-swap ratio should track much closer to 1:1
 across all deciles."*
 
-**The premise is false.** Sushi's `Router02` is a plain ERC-20 allowance — a
-user can approve unlimited once and never approve again. Among wallets with ≥2
-Sushi router swaps:
+Matched ratio (Sushi-router approvals ÷ Sushi-router-entry swaps), 5,110
+non-bot router users — **a point estimate now, not an upper bound**:
 
-- **25.2%** made *fewer* approvals than swaps (coasting on a prior allowance)
-- **8.6%** made *zero* in-window Sushi approvals despite multiple swaps
+- median **1.000**, p90 1.22, max 8
+- **75.8%** of wallets at ratio ≥ 1; only **3.4%** at 0
 
-If the protocol forced a per-swap approval, both would be zero.
+So the plan's 1:1 lands at the median — but its *mechanism* is still wrong.
+Sushi does not force a per-swap approval (a plain ERC-20 allowance persists);
+the residual coasting is visible as soon as activity rises:
 
-With the premise gone, the prediction goes too. The ratio declines monotonically
-with activity across six bins (Spearman ρ = **−0.32**, n=624):
-
-| Sushi router swaps | wallets | median ratio | share ≥1 |
+| decile (by tx count) | wallets | median swaps | median matched ratio |
 |---|---|---|---|
-| 1 | 461 | 3.00 | 96% |
-| 2 | 100 | 2.00 | 93% |
-| 3 | 25 | 1.67 | 76% |
-| 4–5 | 8 | 1.13 | 88% |
-| 6–10 | 14 | 0.33 | 14% |
-| 11+ | 16 | **0.00** | 6% |
+| 1 | 2,944 | 1 | 1.000 |
+| 2–3 | 736 | 3–5 | 1.000 |
+| 4 | 508 | 7 | 0.625 |
+| 5 | 453 | 11 | 0.333 |
+| 6 | 469 | 22 | 0.840 |
 
-The heaviest bin shows a median of **zero** approvals against a median of 26.5
-swaps. SushiSwap behaves like the plan's *Uniswap* prediction: approve once,
-then coast. Approval cost is charged **per new user**, not per swap.
+The 1:1 emerges because the population is dominated by one-and-done users whose
+single exact approval pairs with their single swap — approval cost is charged
+**per (new user × token)**, and most users never amortize it. Wallets in the
+middle-activity deciles coast (ratio ⅓–⅝); the top decile's 0.84 partly
+reflects USDT's revoke-then-set two-step and repeat exact approvals.
 
----
-
-## 5. ⚠️ The sampling defect that governs every count and ratio
-
-**Measured 2026-07-09: this dataset holds 5.2% of the study population.**
-
-Candidate discovery was **pool-anchored** — `swaps.sql` selects transactions
-having a leg with `project = 'sushiswap'` that sold a stablecoin. But
-RedSnwapper and RouteProcessor are themselves *aggregating* routers: a user on
-sushi.com whose trade Sushi shops to a Uniswap pool is a real SushiSwap user,
-with a real SushiSwap approval, and **zero Sushi pool legs**. Such transactions
-were never fetched.
-
-| | pool-anchored (this dataset) | `tx_to`-anchored (truth) |
-|---|---|---|
-| qualifying router-entry txs | 1,649 | **31,949** |
-| wallets | 626 | **5,184** |
-
-The `tx_to`-anchored query returns `captured = 1,649`, matching this dataset
-exactly — confirmed, not inferred.
-
-**The gap cannot be detected from inside the dataset.** All 66,500 txs have ≥1
-Sushi stablecoin-selling leg *by construction*; querying for counterexamples
-returns zero, which is the filter reflecting itself. The leg-level design is
-fine — for a fetched tx, every leg is present and the first-leg/entry-router
-logic is right. The defect is in **selection**, one layer up.
-
-### What this invalidates
-
-Every **count** (§1, §6) and every **approval-to-action ratio** (§4) is computed
-on ~5% of the population — and not a random 5%, but one biased toward trades
-Sushi routed internally. Treat them as provisional.
-
-### What still holds
-
-- **§3 default-vs-deliberate — unaffected.** It is a paired within-wallet test
-  on approvals only; it never divides by a swap count and never reads `project`.
-  Selecting wallets on pool-touch cannot bias a comparison made *inside* each
-  wallet.
-- **§4's direction — strengthened.** Ratios here are upper bounds (complete
-  approval numerator, undercounted swap denominator). Correcting the denominator
-  pushes every ratio *down*, so:
-  - ✅ "Heavy router users coast; approval is a per-new-user cost" — **safe, and
-    the correction makes it more true**
-  - ❌ "Median 3.0 supports ≈1:1" — **not safe**; the true median is far lower
-
-In-dataset symptom of the leak: 67 non-bot wallets approved a Sushi router and
-have **zero** observed swaps.
-
-**Fix:** re-anchor `cand` on `tx_to IN (SUSHI_ROUTERS)`, then re-fetch approvals
-for the 5,184 wallets. Needs ~300+ Dune credits (≈126 remain this period).
-
-Related: `router_primary` is named for what it measures — of the txs we can
-*see*, ≥80% entered via a Sushi router. It does **not** mean the wallet is a
-SushiSwap loyalist.
+Residual scope note: 18 of 4,952 non-bot Sushi-router approvers (0.4%) show
+zero router-entry swaps — attributable to window truncation and the first-leg
+qualification rule, not missing data.
 
 ---
 
-## 6. Deciles do not apply to this arm (provisional — see §5)
+## 5. Sampling defect — RESOLVED
 
-**72.0%** of non-bot Sushi router users made exactly one qualifying swap, so
-equal-frequency binning collapses (`pd.qcut` drops duplicate edges) and only 3
-of 10 deciles are non-empty.
+Earlier versions of this file carried a governing caveat: the fetch was
+pool-anchored and held 5.2% of the study population. That was fixed by the
+additive delta fetch on 2026-07-09 (`swaps_txto_delta.sql` — tx_to-anchored,
+anti-joined against the old predicate; details in `sushiswap_v2_run_log.md`).
+The router-entry population now matches the independent Dune funnel exactly,
+and the delta was validated leg-for-leg against the overlap before any
+downstream number was recomputed.
 
-This is a finding, not a bug: once bots are removed, SushiSwap's router
-population is essentially all one-shot users. The plan's D1–D10 design assumes
-an activity spread this arm does not have. It remains meaningful for Uniswap.
+What the fix changed, for the record:
+
+- **Counts** grew ~19× (1,649 → 31,949 txs); RedSnwapper went from a minority
+  contract to 97% of the population.
+- **§4's level** moved as predicted in the "upper bound" warning: the old
+  median of 3.0 fell to **1.0** once the denominator was complete.
+- **§3's conclusion** was unaffected (paired within-wallet design), and its
+  discordance counts grew strictly more one-sided.
+
+`router_primary` still means: of the txs we can *see* (Sushi-touching), ≥80%
+entered via a Sushi router. It is Sushi-relative loyalty, not a full trading
+profile — a wallet's Uniswap-only trades remain invisible to this arm.
+
+---
+
+## 6. Deciles remain a poor fit for this arm
+
+**45.4%** of non-bot Sushi router users made exactly one qualifying swap
+(down from 72% in the biased sample, but still dominant), so equal-frequency
+binning collapses and only **6 of 10** deciles are non-empty.
+
+The complete population has more activity spread than the old sample — deciles
+4–6 are now populated and show the coasting gradient in §4 — but the plan's
+D1–D10 design still cannot be filled as specified. It remains meaningful for
+Uniswap.
 
 ---
 
@@ -223,22 +203,24 @@ an activity spread this arm does not have. It remains meaningful for Uniswap.
 
 | | count |
 |---|---|
-| non-bot wallets with ≥1 live allowance | 8,680 |
-| live (wallet, token, spender) triples | 47,271 |
-| …**unlimited** (uint256 max) | **22,489 (47.6%)** |
-| triples last acted on by a revoke | 6,742 (12.5%) |
-| live allowances to a Sushi router | 1,666 (59.9% unlimited) |
+| non-bot wallets with ≥1 live allowance | 13,060 |
+| live (wallet, token, spender) triples | 69,653 |
+| …**unlimited** (uint256 max) | **31,238 (44.8%)** |
+| triples last acted on by a revoke | 9,719 (12.2%) |
+| live allowances to a Sushi router | 7,917 (**30.2%** unlimited) |
 
 **Read the unlimited count as the real number.** For unlimited triples,
 "outstanding" is exactly the plan's persistent exposure — spending never
-decrements `uint256` max. For the 24,782 *exact* triples it overstates: an exact
+decrements `uint256` max. For the 38,415 *exact* triples it overstates: an exact
 allowance is usually consumed by the swap it enabled, and ERC-20 emits no event
 on spend. Events cannot distinguish consumed from unused — that needs
 `allowance()` state reads at a block height.
 
-Top spenders holding live allowances (non-bot), by wallets: OKX TokenApprove
-2,311 (79% unlimited), LI.FI 2,177 (16%), Uniswap Permit2 2,128 (81%), 1inch V6
-1,968 (47%), SushiSwap RedSnwapper 627 (55%).
+Top spenders holding live allowances (non-bot), by wallets: **SushiSwap
+RedSnwapper 4,984 (28% unlimited)**, Uniswap Permit2 3,511 (81%), LI.FI 2,638
+(14%), OKX TokenApprove 2,591 (76%), 1inch V6 2,537 (52%). The spread —
+14% to 81% unlimited across spenders drawing on the same wallet pool — is §3's
+finding restated at the exposure level.
 
 ---
 
@@ -246,28 +228,34 @@ Top spenders holding live allowances (non-bot), by wallets: OKX TokenApprove
 
 | month | swaps | router-entry | approvals | unlimited | unl. wallets | unl./wallet | revoke share |
 |---|---|---|---|---|---|---|---|
-| 2025-11 | 9,780 | 354 | 18,500 | 2,344 | 1,216 | 1.93 | 12.7% |
-| 2025-12 | 8,910 | 482 | 21,801 | **5,624** | 1,546 | **3.64** | 13.2% |
-| 2026-01 | 8,357 | 390 | 25,787 | 4,499 | 1,709 | 2.63 | 12.9% |
-| 2026-02 | 9,769 | 153 | 21,606 | 2,859 | 1,520 | 1.88 | 10.6% |
+| 2025-11 | 11,570 | 2,717 | 22,967 | 2,918 | 1,608 | 1.81 | 11.8% |
+| 2025-12 | 10,486 | 2,577 | 27,704 | **8,235** | 2,071 | **3.98** | 11.9% |
+| 2026-01 | 21,080 | **13,754** | 39,347 | 7,157 | 2,694 | 2.66 | 10.7% |
+| 2026-02 | 17,586 | 9,142 | 28,602 | 3,719 | 2,042 | 1.82 | 9.5% |
 
-December's unlimited-approval spike (+140%) is **broad-based**: distinct wallets
-+27%, per-wallet intensity +89%, and the top-3 wallets' share of unlimited
-events *falls* (12.8% Nov → 6.5% Dec). Consistent with the plan's
-tax-loss-harvesting hypothesis. **Not proof of motive.**
+Two separate events, previously invisible:
+
+- **December's unlimited-approval spike is broad-based**: wallet count and
+  per-wallet intensity both rise, and the top-3 wallets' share of unlimited
+  events *falls* (10.2% Nov → 4.5% Dec). Consistent with the plan's
+  tax-loss-harvesting hypothesis. Not proof of motive.
+- **January's router-entry surge (2.6k → 13.8k txs)** is new — it is
+  RedSnwapper flow the old fetch discarded. Whether it is organic growth or a
+  front-end/campaign effect needs off-chain context; it does not coincide with
+  an unlimited-approval spike, consistent with the exact-default flow.
 
 ---
 
-## 9. Prof. Kim's notes, tested
+## 9. Prof. Kim's notes, tested on the complete population
 
 | note | verdict |
 |---|---|
-| "How many just take the default vs change it themselves?" | **Answered** — §3. Almost nobody changes it; the interface decides. |
-| "Only thing the permission captures, if it's your first time in that span, is your swap" | **Supported** — §4. Approval is a first-entry event. |
-| "Top traders would not want to use the aggregators" | **Not supported.** Top 1% of wallets by activity use a Sushi router on 5.3% of txs; bottom 50% on 5.2%. No trend. What top traders avoid is *approvals* (median 0 in-window), not aggregators. |
-| "Make sure within these atomic transactions there were true atomic transactions" | **Handled** — first-leg rule + tx-level dedupe. Median 2 legs, max 182; 49.7% single-leg. Mid-route stablecoin hops cannot qualify. |
-| "Normal DEX user… people would swap on Coinbase, it's cheaper" | **Supported.** 72% of non-bot router users made exactly one swap in four months. |
-| "USDC, 30 days, minimal" | **Feasible but thin.** A 30-day USDC-only router cut yields ~104–175 txs / ~41–107 wallets. USDC is the largest first-token (29,363 txs) but USDT has *more* router entries (878 vs 556). |
+| "How many just take the default vs change it themselves?" | **Answered** — §3. Almost nobody changes it; the interface decides. Discordance up to 365:5. |
+| "Only thing the permission captures, if it's your first time in that span, is your swap" | **Supported** — §4. The modal user is one approval : one swap; the approval is a first-entry event per (user, token). |
+| "Top traders would not want to use the aggregators" | **Not supported, with nuance.** Aggregator-side entries carry 67% of the top-1%-by-txs cohort's Sushi-touching flow (router share 32.6%) and 79% of the top-1%-by-volume cohort's (20.6%). But 78.8% of top-volume wallets have used the Sushi router at least once — heavy traders use *both*, they just route most flow through aggregators. |
+| "Make sure within these atomic transactions there were true atomic transactions" | **Handled** — first-leg rule + tx-level dedupe; mid-route stablecoin hops cannot qualify. |
+| "Normal DEX user… people would swap on Coinbase, it's cheaper" | **Directionally supported.** 45.4% of non-bot router users made exactly one qualifying swap in four months; the median is 2. On-chain DEX swapping of stables is an occasional act for most wallets in this window. |
+| "USDC, 30 days, minimal" | **Feasible.** The complete population is ~19× the old sample; a 30-day USDC-only router-entry cut is now thousands of txs, not ~100. |
 
 ---
 
@@ -283,14 +271,13 @@ question is well-posed. The Token Pairs line is the internal inconsistency.
 
 ## 11. Open items
 
-1. **`tx_to`-anchored re-fetch — now the top priority, not a refinement.** The
-   current fetch holds 5.2% of the population (§5). Re-anchor `cand` on
-   `tx_to IN (SUSHI_ROUTERS)`; re-fetch approvals for the 5,184 wallets.
-   Needs ~300+ Dune credits (~126 remain this period; resets 2026-07-25).
-2. **Gas in USD** — join `prices.usd` at each row's `block_time`.
-3. **Uniswap arm re-fetch** to the leg-level schema + first-leg rule, so the
-   default-vs-deliberate finding (§3) gets a cross-protocol contrast.
-4. **Front-end audit** to confirm which UI ships which approval default (§3).
+1. **Gas in USD** — join `prices.usd` at each row's `block_time`.
+2. **Uniswap arm re-fetch** under the harmonized definition (tx_to-anchored,
+   first-leg rule, any output, spender unpinned; one row per tx for the full
+   population, leg-level for a sample) so §3 gets a cross-protocol contrast.
+3. **Front-end audit** to confirm which UI ships which approval default (§3),
+   including RedSnwapper's exact-amount flow.
+4. **January surge attribution** (§8) — off-chain context.
 5. Polygon arm; lending arms (Aave, Compound).
 
 ---
