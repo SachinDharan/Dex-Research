@@ -1,38 +1,47 @@
--- sushiswap_v2/swaps.sql — stage 1 of the SushiSwap arm fetch
+-- sushiswap_v2/swaps_tx_to_anchored.sql — CORRECTED stage 1 of the SushiSwap arm
 --
--- !! SUPERSEDED (2026-07-09) by swaps_tx_to_anchored.sql. The `cand` CTE below
--- !! anchors on `project = 'sushiswap'`, which drops every tx that entered a
--- !! Sushi router but routed out to non-Sushi pools. Measured: this query
--- !! captures 1,649 of 31,949 qualifying router-entry txs (5.2%), 626 of 5,184
--- !! wallets. Kept for provenance — it produced dex-research.sushiswap_v2.
+-- Replaces swaps.sql, whose `cand` CTE anchored on `project = 'sushiswap'`.
+-- That pool-anchor silently dropped 95% of the study population: RedSnwapper
+-- and RouteProcessor are *aggregating* routers, so a user on sushi.com whose
+-- trade Sushi shops out to a Uniswap or Curve pool is a genuine SushiSwap user,
+-- with a genuine SushiSwap approval, whose tx contains ZERO sushiswap legs.
 --
--- Qualifying transactions: the FIRST executed swap leg sold a study stablecoin
--- (any output token), discovered via a SushiSwap pool leg. Returns LEG-LEVEL
--- rows (every leg of every qualifying tx, any project) with tx_to / evt_index /
--- project / pool / taker, so entry-router vs first-hop vs output-direction are
--- post-processing flags, not fetch filters.
+-- Measured on Dune, same window and same first-leg rule:
+--     pool-anchored (swaps.sql) :  1,649 qualifying txs /   626 wallets
+--     tx_to-anchored (this file): 31,949 qualifying txs / 5,184 wallets
 --
--- Stages 2-3 (approvals, permit2_events) take their wallet lists FROM the
--- BigQuery table this loads into — the Execute SQL plan caps executions at
--- 2 minutes, so the arm is decomposed instead of one-shot.
+-- The defect is undetectable from inside the loaded dataset — every fetched tx
+-- has a sushiswap stablecoin-selling leg by construction. See
+-- docs/sushiswap_v2_methodology.md, "Known limitations", item 1.
+--
+-- Qualifying transaction: sent directly to a SushiSwap router (`tx_to`), whose
+-- FIRST executed swap leg sold a study stablecoin (any output token). Returns
+-- LEG-LEVEL rows — every leg of every qualifying tx, any project — so
+-- first-hop, output-direction and pool-mix stay post-processing flags.
+--
+-- NOTE: stage 2/3 (approvals, permit2_events) read their wallet list from the
+-- BigQuery table this loads into. Re-running this WILL enlarge that wallet set
+-- (626 -> ~5,184), so approvals must be re-fetched, not appended to.
 --
 -- Parameters:
 --   {{window_start}}   study window start, inclusive
 --   {{window_end}}     study window end, exclusive
 
 WITH cand AS (
+  -- Anchor on the ENTRY CONTRACT (user intent), never on pool membership.
+  -- Canonical set mirrors SUSHI_ROUTERS in dexresearch/process/sushi_analysis.py.
   SELECT DISTINCT tx_hash
   FROM dex.trades
   WHERE blockchain = 'ethereum'
-    AND project = 'sushiswap'
     AND block_month >= DATE '{{window_start}}'
     AND block_month <  DATE '{{window_end}}'
     AND block_time  >= TIMESTAMP '{{window_start}}'
     AND block_time  <  TIMESTAMP '{{window_end}}'
-    AND token_sold_address IN (
-          0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,  -- USDC
-          0xdAC17F958D2ee523a2206206994597C13D831ec7,  -- USDT
-          0x6B175474E89094C44Da98b954EedeAC495271d0F   -- DAI
+    AND tx_to IN (
+          0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f,  -- Router02 (UniswapV2Router02)
+          0xac4c6e212a361c968f1725b4d055b47e63f80b75,  -- RedSnwapper
+          0xe43ca1dee3f0fc1e2df73a0745674545f11a59f5,  -- RouteProcessor4
+          0xd2b37ade14708bf18904047b1e31f8166d39612b   -- RouteProcessor9_2
         )
 ),
 legs AS (
@@ -50,6 +59,8 @@ legs AS (
     AND t.block_month <  DATE '{{window_end}}'
 ),
 qualifying AS (
+  -- First executed leg proves the user STARTED with the stablecoin. A naive
+  -- "any leg sold a stable" test would admit ETH->USDC->TOKEN routes.
   SELECT tx_hash
   FROM (
     SELECT tx_hash, token_sold_address,
@@ -58,9 +69,9 @@ qualifying AS (
   )
   WHERE rn = 1
     AND token_sold_address IN (
-          0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,
-          0xdAC17F958D2ee523a2206206994597C13D831ec7,
-          0x6B175474E89094C44Da98b954EedeAC495271d0F
+          0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,  -- USDC
+          0xdAC17F958D2ee523a2206206994597C13D831ec7,  -- USDT
+          0x6B175474E89094C44Da98b954EedeAC495271d0F   -- DAI
         )
 ),
 swaps AS (

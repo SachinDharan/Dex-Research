@@ -128,9 +128,49 @@ priority-fee field and pay the builder in full. NULL must be treated as
 
 ## Known limitations / deferred
 
-1. **Pool-anchored candidate discovery**: a tx entering via a Sushi router
-   but routed 100% through non-Sushi pools is not fetched (RouteProcessor can
-   do this). Negligible for counts; fixable by `tx_to`-anchored discovery.
+1. **Pool-anchored candidate discovery — NOT negligible. Measured 2026-07-09:
+   the fetch captures 5.2% of the study population.**
+
+   `queries/sushiswap_v2/swaps.sql` anchors on
+   `cand = (project = 'sushiswap' AND token_sold IN stables)`. A tx entering a
+   Sushi router but routed 100% through non-Sushi pools has no such leg and is
+   never fetched. This was assumed rare. It is the common case, because
+   **RedSnwapper and RouteProcessor are themselves aggregating routers** — a
+   user on sushi.com whose trade Sushi shops to a Uniswap pool is a genuine
+   SushiSwap user with a genuine SushiSwap approval and zero Sushi pool legs.
+
+   Measured on Dune, `tx_to`-anchored, same window and same first-leg rule:
+
+   | | pool-anchored (this dataset) | `tx_to`-anchored (truth) |
+   |---|---|---|
+   | qualifying router-entry txs | 1,649 | **31,949** |
+   | wallets | 626 | **5,184** |
+
+   (The `tx_to`-anchored query returns `captured = 1,649`, matching this
+   dataset exactly — the diagnosis is confirmed, not inferred.)
+
+   **The gap is undetectable from inside the dataset.** Every one of the 66,500
+   txs has ≥1 Sushi leg that sold a stablecoin, by construction; querying for
+   counterexamples returns zero. That zero is the filter reflecting itself, not
+   evidence of completeness. Note this does *not* impugn the leg-level design:
+   for a tx that was fetched, all legs are present and the first-leg /
+   entry-router logic is correct. The defect is in **selection**, one layer up.
+
+   Consequences:
+   - Every **count** and every **approval-to-action ratio** in
+     `sushiswap_v2_findings.md` is computed on ~5% of the population, and not a
+     random 5% — it is biased toward trades Sushi routed internally.
+   - Ratios are **upper bounds**: the numerator (approvals to the router) is
+     complete for fetched wallets, the denominator (their swaps) is not.
+     Conclusions robust in the "true value is lower" direction still hold.
+   - The **default-vs-deliberate** finding (§3 of the findings) is unaffected:
+     it is a paired within-wallet test on approvals only, never dividing by a
+     swap count. Selecting wallets on pool-touch cannot bias a comparison made
+     inside each wallet.
+
+   Fix: re-anchor `cand` on `tx_to IN (SUSHI_ROUTERS)` instead of
+   `project = 'sushiswap'`, then re-fetch approvals for the resulting 5,184
+   wallets. Deferred: needs ~300+ Dune credits (≈126 remain this period).
 2. **Cross-arm inconsistency**: the legacy Uniswap V4 fetch is stable→ETH
    only, tx-level, *without* the first-leg rule (it counts mid-route
    stable→ETH hops). Re-fetch under this arm's definition before cross-arm

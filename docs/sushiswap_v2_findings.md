@@ -25,21 +25,33 @@ users "carry unknowingly."
 
 Secondary: **SushiSwap's approval cost is a per-new-user cost, not a per-swap
 cost.** This *contradicts* the research plan's prediction, for a reason given
-below.
+below. The *direction* is robust; the *level* is not.
+
+> ⚠️ **Read §5 before quoting any count or ratio.** The fetch is pool-anchored
+> and holds **5.2%** of the study population (1,649 of 31,949 qualifying
+> router-entry txs; 626 of 5,184 wallets). The default-vs-deliberate headline
+> (§3) is unaffected — it is a paired within-wallet test. The counts in §1, §4
+> and §6 are provisional pending a `tx_to`-anchored re-fetch.
 
 ---
 
 ## 1. Population — "a SushiSwap swap" has three meanings
 
+*Provisional — see §5. These are the transactions the pool-anchored fetch
+selected, not the full population.*
+
 | population | txs | wallets |
 |---|---|---|
 | touched a Sushi pool (stable sold there) | 66,500 | 11,614 |
 | …whose **first hop** was a Sushi pool | 47,215 | 8,145 |
-| …entered via a **Sushi router** (`tx_to`) | **1,649** | **626** |
+| …entered via a **Sushi router** (`tx_to`) | 1,649 | 626 |
+| **true router-entry population** (`tx_to`-anchored, Dune) | **31,949** | **5,184** |
 
-~97.5% of Sushi-pool volume is aggregator/MEV flow *through* Sushi liquidity,
-not users choosing SushiSwap. The router-entry set is the study population,
-because a 1inch user approves 1inch, never Sushi.
+Most Sushi-*pool* volume is aggregator/MEV flow *through* Sushi liquidity, not
+users choosing SushiSwap — the router-entry set is the study population, because
+a 1inch user approves 1inch, never Sushi. But the converse also holds and the
+fetch missed it: most Sushi-*router* volume never touches a Sushi pool, because
+Sushi's own routers aggregate outward. Only 1,649 of 31,949 were captured.
 
 The router set is four contracts (see `SUSHI_ROUTERS`). An earlier count of
 ~1,015 txs / 257 wallets missed two of them — **RedSnwapper is the largest by
@@ -106,7 +118,7 @@ requires a UI audit, not on-chain data.
 
 ---
 
-## 4. Why this contradicts the research plan
+## 4. Why this contradicts the research plan (levels provisional — see §5)
 
 The plan predicts: *"Because SushiSwap requires a fresh exact-amount approval
 before each swap, the approval-to-swap ratio should track much closer to 1:1
@@ -139,28 +151,63 @@ then coast. Approval cost is charged **per new user**, not per swap.
 
 ---
 
-## 5. The bound that governs every ratio
+## 5. ⚠️ The sampling defect that governs every count and ratio
 
-Candidate discovery was **pool-anchored**: a tx entering a Sushi router but
-routed entirely through non-Sushi pools was never fetched. The numerator
-(approvals to the router) is complete; the denominator (observed swaps) is not.
-67 non-bot wallets approved a Sushi router with **zero** observed swaps.
+**Measured 2026-07-09: this dataset holds 5.2% of the study population.**
 
-Therefore **every approval-to-action ratio here is an upper bound.** Only
-conclusions robust in the "true value is lower" direction are safe:
+Candidate discovery was **pool-anchored** — `swaps.sql` selects transactions
+having a leg with `project = 'sushiswap'` that sold a stablecoin. But
+RedSnwapper and RouteProcessor are themselves *aggregating* routers: a user on
+sushi.com whose trade Sushi shops to a Uniswap pool is a real SushiSwap user,
+with a real SushiSwap approval, and **zero Sushi pool legs**. Such transactions
+were never fetched.
 
-- ✅ "Heavy router users coast" (0.33 → lower still) — **safe**
-- ❌ "Median 3.0 approvals per swap supports ≈1:1" (3.0 → lower) — **not safe**
+| | pool-anchored (this dataset) | `tx_to`-anchored (truth) |
+|---|---|---|
+| qualifying router-entry txs | 1,649 | **31,949** |
+| wallets | 626 | **5,184** |
 
-Fix: `tx_to`-anchored candidate discovery.
+The `tx_to`-anchored query returns `captured = 1,649`, matching this dataset
+exactly — confirmed, not inferred.
+
+**The gap cannot be detected from inside the dataset.** All 66,500 txs have ≥1
+Sushi stablecoin-selling leg *by construction*; querying for counterexamples
+returns zero, which is the filter reflecting itself. The leg-level design is
+fine — for a fetched tx, every leg is present and the first-leg/entry-router
+logic is right. The defect is in **selection**, one layer up.
+
+### What this invalidates
+
+Every **count** (§1, §6) and every **approval-to-action ratio** (§4) is computed
+on ~5% of the population — and not a random 5%, but one biased toward trades
+Sushi routed internally. Treat them as provisional.
+
+### What still holds
+
+- **§3 default-vs-deliberate — unaffected.** It is a paired within-wallet test
+  on approvals only; it never divides by a swap count and never reads `project`.
+  Selecting wallets on pool-touch cannot bias a comparison made *inside* each
+  wallet.
+- **§4's direction — strengthened.** Ratios here are upper bounds (complete
+  approval numerator, undercounted swap denominator). Correcting the denominator
+  pushes every ratio *down*, so:
+  - ✅ "Heavy router users coast; approval is a per-new-user cost" — **safe, and
+    the correction makes it more true**
+  - ❌ "Median 3.0 supports ≈1:1" — **not safe**; the true median is far lower
+
+In-dataset symptom of the leak: 67 non-bot wallets approved a Sushi router and
+have **zero** observed swaps.
+
+**Fix:** re-anchor `cand` on `tx_to IN (SUSHI_ROUTERS)`, then re-fetch approvals
+for the 5,184 wallets. Needs ~300+ Dune credits (≈126 remain this period).
 
 Related: `router_primary` is named for what it measures — of the txs we can
 *see*, ≥80% entered via a Sushi router. It does **not** mean the wallet is a
-SushiSwap loyalist; its Uniswap-only trades are invisible to this fetch.
+SushiSwap loyalist.
 
 ---
 
-## 6. Deciles do not apply to this arm
+## 6. Deciles do not apply to this arm (provisional — see §5)
 
 **72.0%** of non-bot Sushi router users made exactly one qualifying swap, so
 equal-frequency binning collapses (`pd.qcut` drops duplicate edges) and only 3
@@ -236,7 +283,10 @@ question is well-posed. The Token Pairs line is the internal inconsistency.
 
 ## 11. Open items
 
-1. **`tx_to`-anchored re-fetch** — removes the upper-bound caveat on every ratio (§5).
+1. **`tx_to`-anchored re-fetch — now the top priority, not a refinement.** The
+   current fetch holds 5.2% of the population (§5). Re-anchor `cand` on
+   `tx_to IN (SUSHI_ROUTERS)`; re-fetch approvals for the 5,184 wallets.
+   Needs ~300+ Dune credits (~126 remain this period; resets 2026-07-25).
 2. **Gas in USD** — join `prices.usd` at each row's `block_time`.
 3. **Uniswap arm re-fetch** to the leg-level schema + first-leg rule, so the
    default-vs-deliberate finding (§3) gets a cross-protocol contrast.
