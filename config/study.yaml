@@ -42,8 +42,10 @@ protocols:
     version: "v3"
     type: lending
     chains: [ethereum, polygon]
+    # Ethereum Pool verified 2026-07-09: dominant tx_to of stable-supply txs
+    # (55,906 txs / 22,132 wallets) and the ERC-20 spender for supplies.
     spenders:
-      ethereum: { pool: "TODO_VERIFY" }  # Aave V3 Pool
+      ethereum: { pool: "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2" }
       polygon:  { pool: "TODO_VERIFY" }
 
   compound:
