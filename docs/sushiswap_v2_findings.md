@@ -12,9 +12,10 @@ on the full, verified population: candidates are `swaps` ∪ `swaps_txto_delta`,
 approvals come from the `approvals_all` view, and the router-entry set matches
 the independent Dune funnel (31,949 txs / 5,184 wallets) exactly.
 
-All gas is reported in **ETH**. USD conversion is deferred — it needs a price
-join at each row's `block_time`, and ETH moved materially across the window, so
-a constant multiplier would be worse than an honest ETH figure.
+Gas is reported in **ETH and USD** — USD converted per event at its hour's
+Coinbase ETH-USD close (`reference.eth_usd_hourly`, no constant multiplier).
+In-window approval gas: all $87,475 / non-bot $22,310 / bots $65,165;
+scope-matched non-bot ratio in USD: 16.9% (vs 17.1% in ETH).
 
 ---
 

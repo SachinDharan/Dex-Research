@@ -32,6 +32,7 @@ from google.cloud import bigquery
 
 from dexresearch.classify import classify_allowance
 from dexresearch.process.deciles import assign_deciles, flag_bots
+from dexresearch.process.prices import gas_usd
 from dexresearch.fetch.aave_timeline import POOL
 from dexresearch.process.sushi_analysis import (
     BOT_APPROVALS_PER_ACTIVE_DAY,
@@ -381,6 +382,13 @@ def run() -> None:
     print(f"  qualifying supply gas             : {fmt_eth(gs)}")
     print(f"  permission overhead               : {ga / gs:.1%}"
           f"   (Sushi 17.1% | Uniswap 10.0% | Compound 18.4%)")
+
+    # USD converted per event at its hour's price BEFORE summing
+    pa = win[win["wallet"].isin(human_set) & (win["spender"] == POOL)].drop_duplicates("tx_hash")
+    sup_h = qual[qual["wallet"].isin(human_set)]
+    ga_u, gs_u = gas_usd(pa).sum(), gas_usd(sup_h).sum()
+    print(f"  USD (hourly Coinbase close, window): approvals ${ga_u:,.0f} vs "
+          f"supplies ${gs_u:,.0f} -> {ga_u / gs_u:.1%}")
 
     # -------------------------------------------------------------- monthly
     h("9. MONTHLY")

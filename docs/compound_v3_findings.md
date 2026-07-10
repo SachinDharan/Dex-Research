@@ -13,7 +13,8 @@ classifier and the default-vs-deliberate test are imported from the shared
 modules (no route-length signal exists in lending, so the behavioral bot rule
 is ≥2 of the remaining 3 signals).
 
-All gas in **ETH**; USD conversion deferred.
+Gas in **ETH and USD** (per-event hourly Coinbase close): window approvals
+$473 + allow() $100 vs supplies $2,855 → 20.0% USD overhead (18.4% in ETH).
 
 ---
 
@@ -131,4 +132,4 @@ receive tokens and need no ERC-20 approval).
    `onBehalfOf`, credit delegation as its extra layer) — same playbook.
 2. Cross-protocol pooled default-vs-deliberate (four arms, shared wallets).
 3. Borrow classification via pre-window balance aggregates, if pursued.
-4. Gas→USD price join; Polygon.
+4. Polygon.

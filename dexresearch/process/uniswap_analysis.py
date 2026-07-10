@@ -34,6 +34,7 @@ from google.cloud import bigquery
 
 from dexresearch.classify import classify_allowance
 from dexresearch.process.deciles import assign_deciles, flag_bots
+from dexresearch.process.prices import gas_usd
 from dexresearch.process.sushi_analysis import (
     BOT_APPROVALS_PER_ACTIVE_DAY,
     BOT_MAX_LEGS,
@@ -529,7 +530,7 @@ def run() -> None:
     out.to_csv(OUT_DIR / "uniswap_outstanding_allowances.csv", index=False)
 
     # ------------------------------------------------------------------ gas
-    h("8. APPROVAL GAS COST (ETH — USD conversion deferred, needs a price join)")
+    h("8. APPROVAL GAS COST (ETH + USD at each event's hourly Coinbase close)")
     total_gas = feats["approval_gas_eth"].sum()
     for name, sub in [("all wallets", feats), ("non-bot", human),
                       ("bots", feats[feats["is_bot"]])]:
@@ -542,6 +543,19 @@ def run() -> None:
     print(f"\n  Scope-matched (non-bot): Uniswap-path approval gas {fmt_eth(ra)} vs")
     print(f"  router-entry swap gas {fmt_eth(rs)}  ->  {ra / rs:.1%}"
           f"   (Sushi arm: 17.1%)")
+
+    # USD converted per event at its hour's price BEFORE summing
+    bots_set = set(feats.loc[feats["is_bot"], "wallet"])
+    wa = win.drop_duplicates("tx_hash").copy()
+    wa["usd"] = gas_usd(wa)
+    print(f"\n  USD (hourly Coinbase close, in-window): "
+          f"all=${wa['usd'].sum():,.0f}  "
+          f"non-bot=${wa.loc[~wa['wallet'].isin(bots_set), 'usd'].sum():,.0f}  "
+          f"bots=${wa.loc[wa['wallet'].isin(bots_set), 'usd'].sum():,.0f}")
+    ra_u = wa[~wa["wallet"].isin(bots_set) & wa["spender"].isin(UNI_PATH_SPENDERS)]["usd"].sum()
+    rs_u = gas_usd(tx[tx["wallet"].isin(human_set)]).sum()
+    print(f"  Scope-matched USD (non-bot): approvals ${ra_u:,.0f} vs "
+          f"router-entry swaps ${rs_u:,.0f} -> {ra_u / rs_u:.1%}")
 
     # -------------------------------------------------------------- monthly
     h("9. MONTHLY")

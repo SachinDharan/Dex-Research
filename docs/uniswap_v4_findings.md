@@ -13,8 +13,9 @@ tx and leg counts reconcile against the separately-fetched
 default-vs-deliberate test are imported from the Sushi module, so the arms
 cannot silently diverge.
 
-All gas is in **ETH**; USD conversion is deferred (needs a price join at
-`block_time`).
+Gas is in **ETH and USD** (per-event hourly Coinbase close,
+`reference.eth_usd_hourly`). In-window approval gas: all $61,901 / non-bot
+$60,142 / bots $1,759; scope-matched USD ratio 10.0% (identical to ETH).
 
 ---
 
@@ -259,5 +260,5 @@ Two checks that matter for the study design:
 
 1. Cross-protocol default-vs-deliberate paired design (Sushi exact-leaning vs
    Permit2 unlimited-leaning, same wallets where they overlap).
-2. Gas→USD price join; Polygon arm.
+2. Polygon arm.
 3. Dec–Feb broad legs if ever needed (resume `fetch.uniswap_broad`).

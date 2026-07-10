@@ -31,6 +31,7 @@ from google.cloud import bigquery
 
 from dexresearch.classify import classify_allowance
 from dexresearch.process.deciles import assign_deciles, flag_bots
+from dexresearch.process.prices import gas_usd
 
 DATASET = "dex-research.sushiswap_v2"
 OUT_DIR = Path("data/analysis")
@@ -612,7 +613,7 @@ def run() -> None:
               f"{r.unlimited:.0%} unlimited")
 
     # ----------------------------------------------------------------- gas
-    h("9. APPROVAL GAS COST (ETH — USD conversion deferred, needs a price join)")
+    h("9. APPROVAL GAS COST (ETH + USD at each event's hourly Coinbase close)")
     print("  The plan's metric is absolute approval gas per wallet:\n")
     total_gas = feats["approval_gas_eth"].sum()
     for name, sub in [("all wallets", feats), ("non-bot", human), ("bots", feats[feats["is_bot"]])]:
@@ -631,6 +632,21 @@ def run() -> None:
     print("  Both sides are restricted to the Sushi router, so this ratio is comparable.")
     print("  The all-spender ratio is NOT reported: its numerator spans every spender")
     print("  while its denominator only covers Sushi-touching swaps (scope mismatch).")
+
+    # USD: converted per event at its hour's price BEFORE summing — ETH moved
+    # ~3x over the lookback, so converting the ETH sums would be wrong.
+    bots_set = set(feats.loc[feats["is_bot"], "wallet"])
+    wa = win.drop_duplicates("tx_hash").copy()
+    wa["usd"] = gas_usd(wa)
+    print(f"\n  USD (hourly Coinbase close, in-window): "
+          f"all=${wa['usd'].sum():,.0f}  "
+          f"non-bot=${wa.loc[~wa['wallet'].isin(bots_set), 'usd'].sum():,.0f}  "
+          f"bots=${wa.loc[wa['wallet'].isin(bots_set), 'usd'].sum():,.0f}")
+    sa_u = wa[~wa["wallet"].isin(bots_set) & wa["spender"].isin(SUSHI_ROUTERS)]["usd"].sum()
+    txu = tx[tx["is_router_entry"] & tx["wallet"].isin(human_set)].copy()
+    rs_u = gas_usd(txu).sum()
+    print(f"  Scope-matched USD (non-bot): approvals ${sa_u:,.0f} vs "
+          f"router-entry swaps ${rs_u:,.0f} -> {sa_u / rs_u:.1%}")
 
     # -------------------------------------------------------------- monthly
     h("10. MONTHLY — the Dec/Jan tax-loss-harvesting window")

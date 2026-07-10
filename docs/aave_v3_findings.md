@@ -10,7 +10,8 @@ match the pre-measured funnel per month exactly; the 22,132-wallet roster
 independently reproduces the entry-profile probe. Shared bot rules,
 classifier and default-vs-deliberate test imported as in every arm.
 
-All gas in **ETH**; USD conversion deferred.
+Gas in **ETH and USD** (per-event hourly Coinbase close): window Pool
+approvals $12,278 vs supplies $44,758 → 27.4% USD overhead (29.4% in ETH).
 
 ---
 
@@ -121,5 +122,5 @@ the ratio.
 
 1. Cross-protocol pooled analysis — four arms, shared wallets, one paired
    default-vs-deliberate design (the study's capstone).
-2. Gas→USD price join; Polygon arms.
+2. Polygon arms.
 3. Compound borrow classification via pre-window balances, if pursued.
