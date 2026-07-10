@@ -122,5 +122,6 @@ the ratio.
 
 1. Cross-protocol pooled analysis — four arms, shared wallets, one paired
    default-vs-deliberate design (the study's capstone).
-2. Polygon arms.
-3. Compound borrow classification via pre-window balances, if pursued.
+2. Compound borrow classification via pre-window balances, if pursued.
+
+The study is **Ethereum-only** by decision (2026-07-09); no Polygon arm.

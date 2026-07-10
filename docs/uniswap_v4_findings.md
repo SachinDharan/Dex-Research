@@ -260,5 +260,4 @@ Two checks that matter for the study design:
 
 1. Cross-protocol default-vs-deliberate paired design (Sushi exact-leaning vs
    Permit2 unlimited-leaning, same wallets where they overlap).
-2. Polygon arm.
 3. Dec–Feb broad legs if ever needed (resume `fetch.uniswap_broad`).

@@ -13,9 +13,9 @@ window:
   # later draws down (Case C, "prior_approval").
   approvals_lookback_months: 18
 
+# Ethereum-only by decision (2026-07-09): no Polygon arm.
 chains:
   - ethereum
-  - polygon
 
 # A "protocol arm" is one row below; the pipeline iterates over arms × chains × months.
 # `spenders` are the contracts users grant approve() to — i.e., the address that
@@ -24,34 +24,31 @@ protocols:
   uniswap:
     version: "v4"
     type: swap
-    chains: [ethereum, polygon]
+    chains: [ethereum]
     spenders:
       # Permit2 is canonical across chains.
       ethereum: { permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" }
-      polygon:  { permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" }
 
   sushiswap:
     version: "v2"
     type: swap
-    chains: [ethereum, polygon]
+    chains: [ethereum]
     spenders:
-      ethereum: { router: "TODO_VERIFY" }
-      polygon:  { router: "TODO_VERIFY" }
+      ethereum: { router: "TODO_VERIFY" }  # superseded: resolved SUSHI_ROUTERS live in process/sushi_analysis.py
 
   aave:
     version: "v3"
     type: lending
-    chains: [ethereum, polygon]
+    chains: [ethereum]
     # Ethereum Pool verified 2026-07-09: dominant tx_to of stable-supply txs
     # (55,906 txs / 22,132 wallets) and the ERC-20 spender for supplies.
     spenders:
       ethereum: { pool: "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2" }
-      polygon:  { pool: "TODO_VERIFY" }
 
   compound:
     version: "v3"
     type: lending
-    chains: [ethereum, polygon]
+    chains: [ethereum]
     # Compound V3 uses one Comet contract per base asset. Ethereum addresses
     # ground-truthed 2026-07-09 from the per-market decoded event tables and
     # cross-checked in contracts.contract_mapping. cUSDSv3/cWETHv3 excluded
@@ -62,23 +59,14 @@ protocols:
         comet_usdc: "0xc3d688b66703497daa19211eedff47f25384cdc3"
         comet_usdt: "0x3afdc9bca9213a35503b077a6072f3d0d5ab0840"
         bulker: "0xa397a8c2086c554b531c02e29f3291c9704b00c7"
-      polygon:
-        comet_usdc: "TODO_VERIFY"
 
-# Asset addresses. Ethereum mainnet values are widely known; verify Polygon
-# choices against your intended definition of "stablecoin" (bridged USDC.e vs
-# native USDC, etc).
+# Asset addresses (Ethereum mainnet).
 tokens:
   ethereum:
     USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
     DAI:  "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-  polygon:
-    USDC_E:  "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # bridged USDC.e — verify
-    USDT:    "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"  # verify
-    DAI:     "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063"  # verify
-    WMATIC:  "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"  # verify
 
 sampling:
   # Per the research plan: flag wallets at >N std devs above mean action count

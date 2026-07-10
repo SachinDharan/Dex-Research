@@ -132,4 +132,3 @@ receive tokens and need no ERC-20 approval).
    `onBehalfOf`, credit delegation as its extra layer) — same playbook.
 2. Cross-protocol pooled default-vs-deliberate (four arms, shared wallets).
 3. Borrow classification via pre-window balance aggregates, if pursued.
-4. Polygon.

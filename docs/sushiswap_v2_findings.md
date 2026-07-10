@@ -279,7 +279,9 @@ question is well-posed. The Token Pairs line is the internal inconsistency.
 3. **Front-end audit** to confirm which UI ships which approval default (§3),
    including RedSnwapper's exact-amount flow.
 4. **January surge attribution** (§8) — off-chain context.
-5. Polygon arm; lending arms (Aave, Compound).
+5. ~~Polygon arm; lending arms~~ — lending arms DONE (see
+   `compound_v3_findings.md`, `aave_v3_findings.md`); Ethereum-only by
+   decision (2026-07-09), no Polygon arm.
 
 ---
 
