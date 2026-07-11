@@ -1,10 +1,21 @@
 """Create `<table>_usd` BigQuery views: every arm table with gas columns,
-wrapped with a per-row `eth_usd` price and `gas_cost_usd`.
+wrapped with a per-row `eth_usd` price, `gas_cost_usd`, and the EIP-1559 fee
+decomposition (`base_fee_per_gas`, `priority_fee_per_gas`).
 
 Views, not physical columns — the fetch tables are gate-validated and stay
 immutable; a view recomputes from `reference.eth_usd_hourly` so a price
 refresh propagates everywhere. `eth_usd_hourly_filled` forward-fills the
 handful of tradeless hours first so joins never produce NULL prices.
+
+Base fees join from `reference.block_base_fees` (dexresearch.fetch.base_fees)
+on block_number. The stored gas_price is the *effective* price paid, so
+priority_fee_per_gas = gas_price - base_fee_per_gas is exact post-London.
+
+`coinbase_transfer_eth` joins from `reference.study_coinbase_transfers`
+(dexresearch.fetch.coinbase_transfers): total out-of-band ETH the tx paid the
+block producer via internal transfers — the MEV-bundle payment channel that
+never shows up in gas-price fields. NULL means none; non-NULL flags likely
+searcher/bot activity (see docs/mev_out_of_band_findings.md).
 
 Run once (idempotent — CREATE OR REPLACE):
     python -m dexresearch.process.usd_views
@@ -61,11 +72,21 @@ def run() -> None:
         client.query(f"""
             CREATE OR REPLACE VIEW `{PROJECT}.{dataset}.{rel}_usd` AS
             SELECT t.*,
-                   p.close                    AS eth_usd,
-                   t.gas_cost_eth * p.close   AS gas_cost_usd
+                   p.close                          AS eth_usd,
+                   t.gas_cost_eth * p.close         AS gas_cost_usd,
+                   b.base_fee_per_gas,
+                   t.gas_price - b.base_fee_per_gas AS priority_fee_per_gas,
+                   cb.coinbase_transfer_eth
             FROM `{PROJECT}.{dataset}.{rel}` t
             LEFT JOIN `{PROJECT}.reference.eth_usd_hourly_filled` p
               ON p.hour = TIMESTAMP_TRUNC(t.block_time, HOUR)
+            LEFT JOIN `{PROJECT}.reference.block_base_fees` b
+              ON b.block_number = t.block_number
+            LEFT JOIN (
+              SELECT tx_hash, SUM(eth) AS coinbase_transfer_eth
+              FROM `{PROJECT}.reference.study_coinbase_transfers`
+              GROUP BY tx_hash
+            ) cb ON cb.tx_hash = LOWER(t.tx_hash)
         """).result()
         print(f"{dataset}.{rel}_usd created")
 

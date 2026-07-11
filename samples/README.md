@@ -17,6 +17,9 @@ Four arms, one prefix each: `sushi_` (SushiSwap), `uniswap_` (Uniswap),
 - `<arm>_default_vs_deliberate.csv` — paired-spender comparison of unlimited
   vs exact approvals (default-following vs deliberate amounts).
 - `uniswap_entry_routers.csv` — entry-router breakdown for the Uniswap arm.
+- `coinbase_transfer_rates.csv` — per-relation share of txs paying the block
+  producer out-of-band (MEV coinbase transfers); see
+  `docs/mev_out_of_band_findings.md`.
 
 ## Row samples (first 50 rows of the full files)
 
