@@ -147,10 +147,11 @@ def load_approvals() -> pd.DataFrame:
     """ERC-20 approve() events, any spender, lookback to Permit2 genesis.
     amount_raw stays a string — uint256 overflows int64."""
     return _q(f"""
-        SELECT wallet, block_time, tx_hash, token_symbol,
+        SELECT wallet, block_time, block_number, tx_hash, token_symbol,
                counterparty AS spender, amount_raw, is_revoke,
-               gas_used, gas_cost_eth, max_priority_fee_per_gas
-        FROM `{DATASET}.approvals`
+               gas_used, gas_price, gas_cost_eth, max_priority_fee_per_gas,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.approvals_usd`
     """)
 
 

@@ -105,18 +105,20 @@ def _load_action_txs(table: str) -> pd.DataFrame:
 
 def load_approvals() -> pd.DataFrame:
     return _q(f"""
-        SELECT wallet, block_time, tx_hash, token_symbol,
+        SELECT wallet, block_time, block_number, tx_hash, token_symbol,
                counterparty AS spender, amount_raw, is_revoke,
-               gas_used, gas_cost_eth, max_priority_fee_per_gas
-        FROM `{DATASET}.approvals`
+               gas_used, gas_price, gas_cost_eth, max_priority_fee_per_gas,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.approvals_usd`
     """)
 
 
 def load_delegation() -> pd.DataFrame:
     return _q(f"""
-        SELECT wallet, delegatee, token_symbol, block_time, tx_hash,
-               amount_raw, is_revoke, gas_cost_eth
-        FROM `{DATASET}.delegation_events`
+        SELECT wallet, delegatee, token_symbol, block_time, block_number, tx_hash,
+               amount_raw, is_revoke, gas_used, gas_price, gas_cost_eth,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.delegation_events_usd`
     """)
 
 

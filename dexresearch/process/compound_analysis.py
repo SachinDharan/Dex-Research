@@ -121,18 +121,20 @@ def load_withdraw_txs() -> pd.DataFrame:
 
 def load_approvals() -> pd.DataFrame:
     return _q(f"""
-        SELECT wallet, block_time, tx_hash, token_symbol,
+        SELECT wallet, block_time, block_number, tx_hash, token_symbol,
                counterparty AS spender, amount_raw, is_revoke,
-               gas_used, gas_cost_eth, max_priority_fee_per_gas
-        FROM `{DATASET}.approvals`
+               gas_used, gas_price, gas_cost_eth, max_priority_fee_per_gas,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.approvals_usd`
     """)
 
 
 def load_allow() -> pd.DataFrame:
     return _q(f"""
-        SELECT market, comet, wallet, manager, block_time, tx_hash,
-               is_grant, is_revoke, gas_cost_eth
-        FROM `{DATASET}.allow_events`
+        SELECT market, comet, wallet, manager, block_time, block_number, tx_hash,
+               is_grant, is_revoke, gas_used, gas_price, gas_cost_eth,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.allow_events_usd`
     """)
 
 

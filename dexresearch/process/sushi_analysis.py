@@ -191,10 +191,11 @@ def load_approvals() -> pd.DataFrame:
     amount_raw is a decimal string (uint256), so it is kept as a string and
     parsed in Python — int64 would overflow."""
     return _q(f"""
-        SELECT wallet, block_time, tx_hash, token_symbol,
+        SELECT wallet, block_time, block_number, tx_hash, token_symbol,
                counterparty AS spender, amount_raw, is_revoke,
-               gas_used, gas_cost_eth, max_priority_fee_per_gas
-        FROM `{DATASET}.approvals_all`
+               gas_used, gas_price, gas_cost_eth, max_priority_fee_per_gas,
+               base_fee_per_gas, priority_fee_per_gas, eth_usd, gas_cost_usd
+        FROM `{DATASET}.approvals_all_usd`
     """)
 
 

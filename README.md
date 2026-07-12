@@ -1,170 +1,137 @@
 # DexResearch
 
-Quantifying the cost and behavior of ERC-20 `approve()` on DEX swaps and
-lending protocols, for the Nov 2025 – Feb 2026 window. See
-[`Research Plan.pdf`](./Research%20Plan.pdf) for the full scope and methodology.
+Quantifying the cost and behavior of ERC-20 `approve()` across DEX swaps and
+lending protocols on Ethereum mainnet, Nov 2025 – Feb 2026. See
+[`Research Plan.pdf`](./Research%20Plan.pdf) for scope and
+[`ResearchDraft.pdf`](./ResearchDraft.pdf) for the current draft.
 
-## What this repo does
+The study has **four protocol arms** spanning the unlimited-default spectrum:
 
-The pipeline pulls on-chain data from Dune Analytics, classifies every
-`approve()` event a sampled wallet emits, and writes per-wallet and
-per-decile metrics to a GCS bucket as Parquet.
+| Arm | Type | Population | Qualifying action |
+| --- | --- | --- | --- |
+| Uniswap (V4-era routers) | swap | 73,039 wallets (fetched in full) | router-entry tx whose first leg sold a study stablecoin |
+| SushiSwap V2 | swap | 5,184 wallets / 31,949 txs | router-entry stablecoin swap |
+| Compound V3 | lending | 1,898 wallets | base-asset Supply direct to a Comet / Bulker |
+| Aave V3 | lending | 22,132 wallets | stablecoin Supply direct to the V3 Pool |
 
-Data flows in two layers — **fetch** (raw Dune extracts) and **process**
-(derived analysis).
+Study stablecoins: USDC, USDT, DAI. Contracts, window, and sampling knobs are
+pinned in [`config/study.yaml`](./config/study.yaml).
 
-| Stage      | Module                                  | GCS prefix                         |
-| ---------- | --------------------------------------- | ---------------------------------- |
-| fetch      | `dexresearch.fetch.wallet_populations`  | `raw/wallet_populations/`          |
-| fetch      | `dexresearch.fetch.timeline`            | `raw/swaps/`, `raw/approvals/`, `raw/permit2_events/` |
-| fetch      | `dexresearch.fetch.supplies`            | `raw/supplies/`                    |
-| fetch      | `dexresearch.fetch.borrows`             | `raw/borrows/`                     |
-| fetch      | `dexresearch.fetch.gas_measurements`    | `raw/gas_measurements/`            |
-| process    | `dexresearch.process.deciles`           | `processed/deciles/`               |
-| process    | `dexresearch.process.metrics`           | `processed/wallet_metrics/`, `processed/decile_metrics/` |
+## Data sources and provenance
 
-The Uniswap V4 fetch (`fetch.timeline`) is one query split into three flat files:
-`raw/swaps/ethereum_uniswap_v4.parquet`, `raw/approvals/ethereum_uniswap_v4.parquet`,
-and `raw/permit2_events/ethereum_uniswap_v4.parquet`. Every uploaded parquet may
-carry a sidecar `<blob>.meta.json` recording the execution id, source SQL,
-parameters, and `fetched_at` timestamp.
+Three external sources, each used for the one thing it does best:
 
-The top-level `metadata/` prefix is reserved for future cross-run artifacts
-(study manifests, schema registries) — currently unused.
+1. **Dune Analytics** (decoded protocol events) — all arm fetches; every query
+   is version-controlled SQL in [`queries/`](./queries/), executed via the
+   Execute SQL API by `dexresearch.dune_runner` (async, paged, manifest-
+   resumable, credit-aware).
+2. **BigQuery public `crypto_ethereum`** (raw chain facts) — per-block base
+   fees for the EIP-1559 decomposition, and internal ETH transfers to the
+   block producer (out-of-band MEV payments).
+3. **Coinbase Exchange API** (ETH/USD hourly closes) — row-level gas→USD
+   conversion.
 
-## Setup
+**[`docs/data_provenance.md`](./docs/data_provenance.md) is the canonical
+record**: one row per BigQuery relation (source SQL, source tables, window,
+validation gate), the full reproduction runbook, and the list of deliberate
+methodological seams. Start there.
 
-Prerequisites: Python 3.14, `gcloud` CLI, a Dune account, a GCP project with
-billing enabled.
-
-```bash
-# 1. Activate the venv (created with Python 3.14)
-source .venv/bin/activate
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Authenticate to GCP (one-time per machine)
-gcloud auth application-default login
-gcloud config set project dex-research
-
-# 4. Create the bucket if it doesn't exist
-gcloud storage buckets create gs://dex-research-data --location=us-central1
-
-# 5. Copy .env.example -> .env and fill in DUNE_API_KEY
-cp .env.example .env
-# then edit .env
-```
-
-## Dune queries
-
-SQL templates live in [`queries/`](./queries/), one subfolder per protocol arm
-(`queries/uniswap_v4/`, etc.) — version-controlled and reviewable.
-
-The Uniswap V4 fetch is a **single query** (`queries/uniswap_v4/timeline.sql`)
-that returns swaps + approvals + permit2 events together. It runs **directly** via
-Dune's Execute SQL endpoint (`POST /api/v1/sql/execute`, Read scope) — no saved
-query, no pasted ids, no dune.com step. `dexresearch.dune_runner` reads the `.sql`,
-substitutes its `{{params}}` (`dune.render_named_sql`), submits it, polls, and
-pages the result reads. It's async, resumable, and credit-aware:
-
-- an execution-id **manifest** (`data/executions/manifest.json`) means a rerun
-  reuses a completed execution instead of paying to run it again;
-- a stage **skips** when its output parquet already exists (reads cost credits too);
-- result reads are **paged**, avoiding the "response too large / not enough
-  credits" error.
-
-Legacy/other stages can still use the saved-query path
-(`dune.run_named_query("<arm>/<dataset>")` against a numeric id in
-`config/study.yaml`), since saved-query CRUD via API needs an Analyst plan.
-
-## Layout
+## Architecture
 
 ```
-DexResearch/
-├── .env / .env.example     # secrets and runtime config
-├── config/study.yaml       # protocols, chains, months, addresses, Dune query IDs
-├── queries/                # Dune SQL templates (mirrored on dune.com)
-│   ├── uniswap_v4/         # active arm (this approval-cost study)
-│   │   └── timeline.sql    # one query: swaps + approvals + permit2
-│   ├── swaps.sql           # legacy generic templates (superseded; migrate per-arm)
-│   ├── approvals.sql
-│   ├── supplies.sql
-│   ├── borrows.sql
-│   ├── wallet_populations.sql
-│   └── gas_measurements.sql
-├── dexresearch/
-│   ├── config.py           # loads .env + study.yaml
-│   ├── dune.py             # Dune client wrapper (simple one-shot runs)
-│   ├── dune_runner.py      # async, paged, resumable, credit-aware runner
-│   ├── gcs.py              # GCS upload/download (with sidecar metadata)
-│   ├── classify.py         # unlimited / exact / revocation classifier
-│   ├── fetch/              # raw Dune extracts
-│   │   ├── _common.py      # window dates + output-exists check
-│   │   ├── timeline.py     # the Uniswap V4 fetch (one query -> 3 datasets)
-│   │   ├── wallet_populations.py
-│   │   ├── supplies.py
-│   │   ├── borrows.py
-│   │   └── gas_measurements.py
-│   └── process/            # derived analysis
-│       ├── deciles.py
-│       └── metrics.py
-├── data/                   # local parquet cache (gitignored)
-└── Research Plan.pdf
+Dune (queries/<arm>/*.sql)      BigQuery public dataset      Coinbase API
+        │                               │                        │
+  fetch.<arm>_* modules          fetch.base_fees           fetch.eth_usd_prices
+  (gate-validated loads)         fetch.coinbase_transfers        │
+        ▼                               ▼                        ▼
+  BigQuery datasets:             reference.block_base_fees, reference.eth_usd_hourly,
+  sushiswap_v2, uniswap_v4,      reference.study_coinbase_transfers
+  compound_v3, aave_v3                  │
+        └───────────────┬───────────────┘
+                        ▼
+        process.usd_views → <table>_usd views (18)
+   per-row eth_usd, gas_cost_usd, base/priority fee, coinbase_transfer_eth
+                        ▼
+        process.<arm>_analysis → data/analysis/*.csv
+   (committed in datasets/analysis; raw events in datasets/raw_events)
 ```
 
-## Running
+Design invariants:
 
-### Approval-cost study (Uniswap V4)
-
-One query, one command — no flags, no confirmation gate. It returns the swaps,
-their wallets' Permit2 approvals (18-mo lookback), and their Permit2 events, then
-writes the three datasets. Idempotent: it skips when the outputs already exist and
-reuses cached executions, so re-running never re-spends credits; reads are paged.
-
-```bash
-source .venv/bin/activate
-
-python -m dexresearch.fetch.timeline
-#   or equivalently: python3 dexresearch/fetch/timeline.py
-#   add --force to re-fetch even if the outputs already exist
-```
-
-Tune page size, engine tier, and concurrency under `dune:` in `config/study.yaml`.
-Output goes to `data/` (local cache mirroring GCS) and `gs://$GCS_BUCKET/…`.
-
-### Legacy multi-protocol flow (sample-first)
-
-The original wallet-population sampling stages remain for the other protocol
-arms once their contracts are verified (`TODO_VERIFY` in `config/study.yaml`):
-
-```bash
-python -m dexresearch.fetch.wallet_populations
-python -m dexresearch.process.deciles
-python -m dexresearch.fetch.gas_measurements
-python -m dexresearch.process.metrics
-```
+- **Fetch tables are immutable once gate-validated.** Every arm load must
+  exactly match an independently pre-measured Dune funnel count, or it fails.
+  Derived quantities (USD, fee decomposition) are *views* on top.
+- **Everything is resumable.** `data/executions/manifest.json` tracks every
+  execution id and page offset; credit exhaustion (`CreditError`) means "swap
+  the `.env` Dune key and re-run" — nothing is re-bought.
+- **One approval semantics across arms.** The Sushi arm's `approvals.sql` /
+  `permit2_events.sql` are reused verbatim for all four rosters, so cross-arm
+  approval comparisons are apples-to-apples.
 
 ## Reproducing
 
-Anyone with read access to the GCS bucket and a Dune account can re-run any
-stage independently: every stage's input is the previous stage's parquet at a
-deterministic path, and every Dune query's SQL is in [`queries/`](./queries/).
-
-## SushiSwap V2 arm
-
-The SushiSwap arm is complete (Ethereum, Nov 2025 – Feb 2026) and lands in
-BigQuery at `dex-research.sushiswap_v2` rather than GCS parquet.
+Full runbook with ordering and cost notes:
+[`docs/data_provenance.md` §4](./docs/data_provenance.md). Short form:
 
 ```bash
-python -m dexresearch.process.sushi_analysis   # -> data/analysis/*.csv + stdout report
+# arm fetches (Dune → BigQuery)
+python -m dexresearch.fetch.sushi_timeline && python -m dexresearch.fetch.sushi_delta
+python -m dexresearch.fetch.uniswap_wallets && python -m dexresearch.fetch.uniswap_sample
+python -m dexresearch.fetch.uniswap_topup   && python -m dexresearch.fetch.uniswap_broad
+python -m dexresearch.fetch.compound_timeline
+python -m dexresearch.fetch.aave_timeline
+
+# reference joins (no Dune)
+python -m dexresearch.fetch.eth_usd_prices
+python -m dexresearch.fetch.base_fees
+python -m dexresearch.fetch.coinbase_transfers
+
+# derived views + analysis
+python -m dexresearch.process.usd_views
+python -m dexresearch.process.sushi_analysis
+python -m dexresearch.process.uniswap_analysis
+python -m dexresearch.process.compound_analysis
+python -m dexresearch.process.aave_analysis
 ```
 
-- [`docs/sushiswap_v2_findings.md`](./docs/sushiswap_v2_findings.md) — **results**
-- [`docs/sushiswap_v2_methodology.md`](./docs/sushiswap_v2_methodology.md) — why each definition
-- [`docs/sushiswap_v2_run_log.md`](./docs/sushiswap_v2_run_log.md) — how the fetch was done
+Every fetch module supports `--status`. Analysis CSVs land in
+`data/analysis/` (gitignored); the full tables — analysis outputs plus raw
+per-event exports with the fee decomposition — are committed under
+[`datasets/`](./datasets/) (see its README for the file map and loader).
 
-Headline: the unlimited-vs-exact approval choice is a property of the **spender's
-interface**, not of the user — the same wallet, on the same token, accepts
-unlimited from Permit2/OKX and exact from MetaMask/LI.FI (discordance 67:0 and
-359:4). See the findings doc for the bounds that govern every ratio.
+## Setup
+
+Prerequisites: Python 3.14, `gcloud` CLI, a Dune account (community plan
+works — expect to rotate API keys on long fetches), GCP project with billing.
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+gcloud auth application-default login
+gcloud config set project dex-research
+cp .env.example .env   # then set DUNE_API_KEY
+```
+
+## Findings & docs
+
+| Doc | What it holds |
+| --- | --- |
+| [`docs/data_provenance.md`](./docs/data_provenance.md) | **canonical provenance + reproduction runbook** |
+| [`docs/sushiswap_v2_findings.md`](./docs/sushiswap_v2_findings.md) / [`_methodology`](./docs/sushiswap_v2_methodology.md) / [`_run_log`](./docs/sushiswap_v2_run_log.md) | Sushi arm results, definitions, fetch log |
+| [`docs/uniswap_v4_findings.md`](./docs/uniswap_v4_findings.md) / [`docs/uniswap_arm_audit.md`](./docs/uniswap_arm_audit.md) | Uniswap arm results; audit of the legacy fetch |
+| [`docs/compound_v3_findings.md`](./docs/compound_v3_findings.md) | Compound arm results (incl. binary `allow()` regime) |
+| [`docs/aave_v3_findings.md`](./docs/aave_v3_findings.md) | Aave arm results (incl. credit delegation) |
+| [`docs/mev_out_of_band_findings.md`](./docs/mev_out_of_band_findings.md) | coinbase-transfer scan: bots vs behavioral tables |
+
+Headline thread across arms: the unlimited-vs-exact approval choice is a
+property of the **spender's interface**, not of the user — the same wallet,
+on the same token, accepts unlimited from one frontend and exact from another.
+
+## Legacy
+
+The original single-query GCS pipeline (`fetch.timeline`,
+`raw.*` external tables, the never-wired `fetch.{supplies,borrows,
+gas_measurements,wallet_populations}` stubs) predates the harmonized arms and
+is retained only as the pool-touch contrast population and for audit — no
+headline number reads from it. See `docs/data_provenance.md` §3 ("`raw` —
+legacy") and `docs/uniswap_arm_audit.md`.

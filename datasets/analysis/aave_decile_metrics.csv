@@ -1,0 +1,5 @@
+decile,wallets,median_txs,max_txs,median_active_months,median_ratio_pool
+1,17130,1.0,2,1.0,1.0
+2,1840,3.0,3,2.0,0.6666666666666666
+3,948,4.0,4,2.0,0.5
+4,2051,7.0,23,2.0,0.2

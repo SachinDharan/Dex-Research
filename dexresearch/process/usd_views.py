@@ -29,6 +29,7 @@ PROJECT = "dex-research"
 # (dataset, relation) — relations may themselves be views (e.g. approvals_all)
 TARGETS = [
     ("sushiswap_v2", "swaps_router_entry"),
+    ("sushiswap_v2", "swaps_all"),
     ("sushiswap_v2", "approvals_all"),
     ("sushiswap_v2", "permit2_events_all"),
     ("uniswap_v4", "swaps_sampled"),
@@ -63,10 +64,28 @@ LEFT JOIN `{PROJECT}.reference.eth_usd_hourly` p USING (hour)
 """
 
 
+# Full qualifying swap-leg population: both discovery anchors, disjoint by
+# construction (pool-anchored + tx_to-anchored remainder); swaps_router_entry
+# is its router-entry subset. Explicit column list because the delta table
+# has no swap_count (stale in `swaps` anyway; recount legs per tx_hash).
+_SWAP_COLS = """wallet, block_time, block_number, tx_hash, token, token_symbol,
+    counterparty, counter_symbol, amount_usd, tx_to, evt_index, project, pool,
+    taker, gas_used, gas_price, gas_cost_eth, max_priority_fee_per_gas, method_id"""
+
+SWAPS_ALL_VIEW = f"""
+CREATE OR REPLACE VIEW `{PROJECT}.sushiswap_v2.swaps_all` AS
+SELECT {_SWAP_COLS} FROM `{PROJECT}.sushiswap_v2.swaps`
+UNION ALL
+SELECT {_SWAP_COLS} FROM `{PROJECT}.sushiswap_v2.swaps_txto_delta`
+"""
+
+
 def run() -> None:
     client = bigquery.Client(project=PROJECT)
     client.query(FILLED_VIEW).result()
     print("reference.eth_usd_hourly_filled created")
+    client.query(SWAPS_ALL_VIEW).result()
+    print("sushiswap_v2.swaps_all created")
 
     for dataset, rel in TARGETS:
         client.query(f"""
