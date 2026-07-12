@@ -41,6 +41,11 @@ manager permission), `sushi_wallet_cohorts` (features + cohort label),
 `uniswap_broad_nov_entries` (contract-level rosters), `coinbase_transfer_rates`
 (share of transactions paying the block producer directly, a bot signal).
 
+Cross-protocol: `cross_protocol_wallets` — the 1,019 wallets present in both
+the Uniswap roster and the Sushi router-entry population, with per-side
+approval counts and ever-unlimited flags (see
+`docs/cross_protocol_defaults.md` for the analysis built on it).
+
 ## `raw_events/` — full event history
 
 Every individual on-chain event the study observed, one row per event, with
