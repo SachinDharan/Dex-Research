@@ -44,7 +44,10 @@ manager permission), `sushi_wallet_cohorts` (features + cohort label),
 Cross-protocol: `cross_protocol_wallets` — the 1,019 wallets present in both
 the Uniswap roster and the Sushi router-entry population, with per-side
 approval counts and ever-unlimited flags (see
-`docs/cross_protocol_defaults.md` for the analysis built on it).
+`docs/cross_protocol_defaults.md` for the analysis built on it). `cross_protocol_reverse_grants`
+— every approval grant, with block number and tx hash, of the 21 wallets that
+made an exact grant on the Uniswap path and an unlimited grant on Sushi (the
+rare direction of that test).
 
 ## `raw_events/` — full event history
 

@@ -96,3 +96,36 @@ Honest framing caveats for the paper:
   users.
 - Bot exclusion matters little here (11 wallets) but is kept for
   consistency with the arm-level headline numbers.
+
+## The rare direction: exact on Uniswap, unlimited on Sushi
+
+Added 2026-09-19 at Prof. Kim's request for the transactions behind the
+"5". `datasets/analysis/cross_protocol_reverse_grants.csv` lists every
+grant (block number, tx hash, spender, amount) of the non-bot wallets
+that made at least one exact grant on the Uniswap path and at least one
+unlimited grant on Sushi: **357 grants from 21 wallets.**
+
+How the counts relate:
+
+- **1 wallet** never granted unlimited on the Uniswap path for any token
+  (the wallet-level table above).
+- **5 wallet-token pairs** never granted unlimited on the Uniswap path
+  for that token (the token-matched table). Rows of these pairs carry
+  `pair_strict_reverse = True`.
+- **21 wallets** under the loose rule used for this file. Most also
+  granted unlimited on Uniswap at some point, so they are mixed users.
+  The same loose rule in the common direction gives 584 wallets.
+
+Two cautions when reading the file:
+
+- `huge_exact = True` marks grants of 2⁹⁶−1 or more that fall under the
+  2²⁵⁵ unlimited cutoff (for example 2⁹⁶−1 and 2²⁵⁵−1). These are
+  unlimited in practice. 2 of the 5 strict pairs, and 2 of the 21
+  wallets, are "exact on Uniswap" only because of such grants. The
+  classifier is unchanged here so the tables above still reproduce;
+  tightening it moves the token-matched discordance from 588:5 to 588:3.
+- Order in time matters for any story about users becoming more careful.
+  Of the 19 wallets with a real exact Uniswap grant, 12 made all of them
+  before their first unlimited Sushi grant, 4 made all of them after, and
+  3 are mixed. The common path is from exact toward unlimited, not the
+  other way.

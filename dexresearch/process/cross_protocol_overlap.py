@@ -14,7 +14,10 @@ sushiswap_v2.approvals_all (store-broad: any spender, both rosters'
 overlap is a subset of the Sushi roster by construction).
 
 Writes data/analysis/cross_protocol_wallets.csv — one row per overlap
-wallet with grant counts and ever-unlimited flags per side.
+wallet with grant counts and ever-unlimited flags per side — and
+cross_protocol_reverse_grants.csv — every grant (block number, tx hash) of
+the non-bot wallets with an exact Uniswap-path grant AND an unlimited Sushi
+grant, the rare direction of the test.
 
 Run:
     python -m dexresearch.process.cross_protocol_overlap
@@ -35,6 +38,7 @@ PROJECT = "dex-research"
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "data" / "analysis"
 NEAR_UNLIMITED = 2**255  # same coalescing as the per-arm analyses
+HUGE_EXACT = 2**96 - 1  # flag only: max-of-a-smaller-uint grants that fall under the cutoff
 
 
 def _features(name: str, usecols: list[str]) -> pd.DataFrame:
@@ -52,7 +56,7 @@ def load_grants(overlap: set[str]) -> pd.DataFrame:
     job = client.query(
         """
         SELECT wallet, token_symbol, counterparty AS spender,
-               amount_raw, is_revoke, block_time
+               amount_raw, is_revoke, block_time, block_number, tx_hash
         FROM `dex-research.sushiswap_v2.approvals_all`
         WHERE wallet IN UNNEST(@wallets) AND counterparty IN UNNEST(@spenders)
         """,
@@ -83,6 +87,23 @@ def two_by_two(per: pd.DataFrame, label: str) -> None:
     print(f"  exact on both                  : {ee:>5,} ({ee/n:.1%})")
     print(f"  unlimited share: uniswap {both.uniswap.mean():.1%}, sushi {both.sushi.mean():.1%}"
           f"  discordance {ue:,}:{eu:,}")
+
+
+def reverse_grants(hg: pd.DataFrame) -> pd.DataFrame:
+    """All grants of wallets with >=1 exact Uniswap grant and >=1 unlimited Sushi grant."""
+    exact_uni = set(hg.loc[(hg.side == "uniswap") & ~hg.unlimited, "wallet"])
+    unl_sushi = set(hg.loc[(hg.side == "sushi") & hg.unlimited, "wallet"])
+    out = hg[hg.wallet.isin(exact_uni & unl_sushi)].copy()
+
+    # strict = the pair never went unlimited on Uniswap (the 2x2's reverse cell)
+    ever = out.groupby(["wallet", "token_symbol", "side"])["unlimited"].max().unstack()
+    strict = ever[(ever.uniswap == 0) & (ever.sushi == 1)].index
+    out["pair_strict_reverse"] = pd.MultiIndex.from_frame(
+        out[["wallet", "token_symbol"]]).isin(strict)
+    out["huge_exact"] = ~out.unlimited & (out.amount_raw.map(int) >= HUGE_EXACT)
+    cols = ["wallet", "token_symbol", "side", "spender", "block_number", "block_time",
+            "tx_hash", "amount_raw", "unlimited", "huge_exact", "pair_strict_reverse"]
+    return out[cols].sort_values(["wallet", "block_number", "tx_hash"])
 
 
 def run() -> None:
@@ -116,6 +137,11 @@ def run() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     piv.to_csv(OUT_DIR / "cross_protocol_wallets.csv", index=False)
     print(f"\nWrote {OUT_DIR / 'cross_protocol_wallets.csv'} ({len(piv):,} wallets)")
+
+    rev = reverse_grants(hg)
+    rev.to_csv(OUT_DIR / "cross_protocol_reverse_grants.csv", index=False)
+    print(f"Wrote {OUT_DIR / 'cross_protocol_reverse_grants.csv'} "
+          f"({len(rev):,} grants, {rev.wallet.nunique()} wallets)")
 
 
 if __name__ == "__main__":
