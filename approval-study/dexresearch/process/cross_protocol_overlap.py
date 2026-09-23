@@ -46,7 +46,7 @@ def _features(name: str, usecols: list[str]) -> pd.DataFrame:
     if path.exists():
         return pd.read_csv(path, usecols=usecols)
     blob = subprocess.run(
-        ["git", "-C", str(ROOT), "show", f"HEAD:datasets/analysis/{name}.csv"],
+        ["git", "-C", str(ROOT), "show", f"HEAD:approval-study/datasets/analysis/{name}.csv"],
         capture_output=True, check=True).stdout
     return pd.read_csv(io.BytesIO(blob), usecols=usecols)
 
