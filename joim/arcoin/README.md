@@ -49,8 +49,13 @@ implementation changed after block 26029684.
 
 ## Notes
 
-- The default endpoint is Tenderly's public gateway, which keeps full history
-  and needs no API key. Any archive node works; a non-archive node answers
+- The default endpoint is [Tenderly](https://tenderly.co)'s public gateway,
+  `https://mainnet.gateway.tenderly.co`. Tenderly is an Ethereum
+  infrastructure company that runs full-history ("archive") nodes and lets
+  anyone query them over HTTPS with no account or API key. The answers come
+  from the deployed contract code on Ethereum, not from Tenderly; the same
+  checks give the same results through any other archive provider (for
+  example `https://eth.drpc.org`, also keyless). A non-archive node answers
   only `--block latest`.
 - The holder addresses are the two largest balances at block 26029684,
   computed from the token's 400 `Transfer` events (25 holders in total) and
