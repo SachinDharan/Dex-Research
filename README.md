@@ -1,6 +1,6 @@
 # DexResearch
 
-Two projects with Prof. Seoyoung Kim (Santa Clara University) on delegated
+Two projects on delegated
 authority over on-chain assets.
 
 - [`approval-study/`](./approval-study/) — the ERC-20 `approve()` study:
