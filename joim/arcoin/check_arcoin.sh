@@ -4,7 +4,7 @@
 set -eu
 RPC="${RPC:-https://mainnet.gateway.tenderly.co}"
 PROXY=0x252739487c1fa66eaeae7ced41d6358ab2a6bca9        # ArCoin active proxy
-BLOCK=0x18d2874                                          # 26029684
+BLOCK=0x18d2e74                                          # 26029684
 HOLDER_FROM=0x0962e5e430c512005e1345af2b05d260e9347099   # largest holder at BLOCK
 HOLDER_TO=0xb6ffc6f5f6c98dc08348760994fe55522fe61401     # another existing holder
 STRANGER=0x000000000000000000000000000000000000dEaD      # never held RCOIN

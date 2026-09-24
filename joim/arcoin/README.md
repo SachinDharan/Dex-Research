@@ -1,4 +1,4 @@
-# ArCoin authority checks
+# ArCoin Reproducibility Tests
 
 Reproduces the two on-chain tests cited in *Beyond Self-Custody: Delegated
 Authority in Tokenized Securities* (Seoyoung Kim and Sachin Muralidharan,
